@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CoachPanel } from "@/components/coach-panel";
 import { type CoachSession, type WorklistItem, getWorklist, listCoachSessions } from "@/lib/coach";
@@ -139,23 +138,13 @@ export function LearnScreen({ initialCaseId = null }: { initialCaseId?: number |
   return (
     <div className="page learn">
       <div className="atmosphere" aria-hidden="true" />
-      <header className="learn-head">
-        <div>
-          <p className="brand-support">VISCAN training</p>
-          <h1>Learn with Kezia</h1>
-          <p className="hero-lede">
-            An AI clinical coach who explains VIA results on real readings, shows you what to do next, quizzes you, and
-            lets you rehearse telling patients their result.
-          </p>
-        </div>
-        <nav className="screenings-nav">
-          <Link href="/screening" className="back-link">
-            ← Back to screening
-          </Link>
-          <Link href="/screenings" className="back-link">
-            Past screenings →
-          </Link>
-        </nav>
+      <header className="page-head">
+        <p className="brand-support">Training</p>
+        <h1>Learn with Kezia</h1>
+        <p className="hero-lede">
+          An AI clinical coach who explains VIA results on real readings, shows you what to do next, quizzes you, and
+          lets you rehearse telling patients their result.
+        </p>
       </header>
 
       <div className="learn-grid">

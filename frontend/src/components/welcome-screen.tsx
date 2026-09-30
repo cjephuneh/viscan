@@ -331,8 +331,8 @@ export function WelcomeScreen() {
         <p className="welcome-brand">
           <span className="mark-dot" aria-hidden="true" /> VISCAN
         </p>
-        <Link href="/screening" className="staff-link">
-          Staff: screening workstation →
+        <Link href="/dashboard" className="staff-link">
+          Staff area →
         </Link>
       </header>
 

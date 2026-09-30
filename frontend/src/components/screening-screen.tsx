@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { CoachPanel } from "@/components/coach-panel";
 import { CheckedInPatients, IntakeSummary } from "@/components/intake-panel";
 import { SendResults } from "@/components/send-results";
+import { ViscanMark } from "@/components/viscan-mark";
 import { type Intake, getIntake } from "@/lib/intake";
 import {
   type Interpretation,
@@ -68,21 +69,6 @@ function otherFinding(via: ViaResult): ViaResult | null {
   if (via === "VIA_POSITIVE" || via === "SUSPICIOUS_FOR_CANCER") return "VIA_NEGATIVE";
   if (via === "VIA_NEGATIVE") return "VIA_POSITIVE";
   return null;
-}
-
-function ViscanMark({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <circle cx="16" cy="16" r="9" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="16" cy="16" r="2.3" fill="currentColor" />
-      <path
-        d="M16 4.5v3.2M16 24.3v3.2M4.5 16h3.2M24.3 16h3.2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 function SelectField({
@@ -346,12 +332,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
       <header className="hero">
         <div className="hero-copy">
           <p className="brand-support">Supports VIA cervical screening</p>
-          <div className="brand-row">
-            <span className="mark" aria-hidden="true">
-              <ViscanMark />
-            </span>
-            <h1 className="brand-name">VISCAN</h1>
-          </div>
+          <h1 className="brand-name">New screening</h1>
           <p className="hero-lede">
             Place the screening image from the visit, review a reading, and confirm it yourself
             before anything is treated as final.
@@ -361,12 +342,6 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               Start with an image
             </button>
             <p className="hero-note">AI-assisted reading · clinician confirms every result</p>
-            <Link className="hero-note learn-link" href="/screenings">
-              Past screenings →
-            </Link>
-            <Link className="hero-note learn-link" href="/learn">
-              Training with Kezia →
-            </Link>
           </div>
         </div>
 

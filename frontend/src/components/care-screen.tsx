@@ -125,9 +125,13 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
       <div className="atmosphere" aria-hidden="true" />
 
       <header className="care-header">
-        <Link href="/screening" className="back-link">
-          ← Back to screening
-        </Link>
+        <nav className="breadcrumb" aria-label="Breadcrumb">
+          <Link href="/screenings">Past screenings</Link>
+          <span aria-hidden="true">/</span>
+          <Link href={`/screenings?q=%23${interpretationId}`}>Reading #{interpretationId}</Link>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">Care</span>
+        </nav>
         <p className="eyebrow">After the screen</p>
         <h1 className="care-title">Referral &amp; nearby care</h1>
         {careError ? <p className="error">{careError}</p> : null}

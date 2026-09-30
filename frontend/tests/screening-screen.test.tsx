@@ -33,9 +33,9 @@ describe("ScreeningScreen", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the brand and the visit fields", () => {
+  it("shows the page title and the visit fields", () => {
     render(<ScreeningScreen />);
-    expect(screen.getByRole("heading", { name: "VISCAN" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "New screening" })).toBeInTheDocument();
     for (const label of ["Patient ID", "Age", "HIV status", "HPV test", "Pregnant", "Clinician ID"]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }

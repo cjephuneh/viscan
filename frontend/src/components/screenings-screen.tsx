@@ -147,9 +147,9 @@ function ScreeningItem({ row }: { row: ScreeningRow }) {
   );
 }
 
-export function ScreeningsScreen() {
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState<ScreeningQuery>({ sort: "newest", page: 1, per_page: PER_PAGE });
+export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery }) {
+  const [search, setSearch] = useState(initial.q ?? "");
+  const [query, setQuery] = useState<ScreeningQuery>({ sort: "newest", ...initial, page: 1, per_page: PER_PAGE });
   const [loaded, setLoaded] = useState<{ key: string; data?: ScreeningPage; error?: string } | null>(null);
 
   const key = JSON.stringify(query);
@@ -181,20 +181,10 @@ export function ScreeningsScreen() {
   return (
     <div className="page screenings">
       <div className="atmosphere" aria-hidden="true" />
-      <header className="learn-head">
-        <div>
-          <p className="brand-support">VISCAN records</p>
-          <h1>Past screenings</h1>
-          <p className="hero-lede">Every AI reading, what the clinician confirmed, and what happened next.</p>
-        </div>
-        <nav className="screenings-nav">
-          <Link href="/screening" className="back-link">
-            ← New screening
-          </Link>
-          <Link href="/learn" className="back-link">
-            Training with Kezia →
-          </Link>
-        </nav>
+      <header className="page-head">
+        <p className="brand-support">Records</p>
+        <h1>Past screenings</h1>
+        <p className="hero-lede">Every AI reading, what the clinician confirmed, and what happened next.</p>
       </header>
 
       {summary ? (
