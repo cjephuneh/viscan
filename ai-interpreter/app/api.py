@@ -19,6 +19,7 @@ from .services.places import PlacesUnavailable, haversine_km, nearby_pharmacies
 from .services.overlay import render_overlay
 from .services.pipeline import PipelineError, analyze_image, build_response
 from .services.storage import get_storage
+from .services.video_report import request_video_report
 
 api_bp = Blueprint("api", __name__)
 
@@ -302,7 +303,9 @@ def annotate(interp_id):
     db.session.add(annotation)
     interp.review_status = "reviewed" if annotation.agrees_with_ai else "disputed"
     db.session.commit()
-    return jsonify(annotation.to_dict() | {"review_status": interp.review_status}), 201
+    # The reading is now clinician-approved: render the video report (ai-avatar).
+    video = request_video_report(current_app._get_current_object(), interp, annotation)
+    return jsonify(annotation.to_dict() | {"review_status": interp.review_status, "video_report": video}), 201
 
 
 @api_bp.post("/patients/<int:patient_id>/diagnoses")

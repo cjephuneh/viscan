@@ -9,6 +9,7 @@ services:
     environment:
       VISCAN_API_URL: http://ai-interpreter:5050
       VISCAN_API_KEY: ${VISCAN_API_KEY:-}
+      VISCAN_AVATAR_URL: http://ai-avatar:9090
     ports:
       - "3000:3000"
     depends_on:
@@ -24,14 +25,12 @@ services:
     container_name: viscan-ai-interpreter
     env_file:
       - ./ai-interpreter/.env
+    environment:
+      AVATAR_API_URL: http://ai-avatar:9090
     volumes:
       - viscan-interpreter-data:/data
     ports:
       - "5050:5050"
-    networks:
-      default:
-        aliases:
-          - backend
     restart: unless-stopped
 
   # -------------------------------------------------------------

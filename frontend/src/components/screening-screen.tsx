@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { CoachPanel } from "@/components/coach-panel";
 import { CheckedInPatients, IntakeSummary } from "@/components/intake-panel";
 import { SendResults } from "@/components/send-results";
+import { VideoReport } from "@/components/video-report";
 import { ViscanMark } from "@/components/viscan-mark";
 import { type Intake, getIntake } from "@/lib/intake";
 import {
@@ -920,6 +921,8 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                       </button>
                     </div>
                   </article>
+
+                  <VideoReport interpretationId={result.interpretation_id} />
 
                   <SendResults
                     interpretationId={result.interpretation_id}

@@ -69,3 +69,9 @@ class Config:
     ANAM_COACH_AVATAR_MODEL = os.getenv("ANAM_COACH_AVATAR_MODEL", "cara-4")
     ANAM_COACH_VOICE_ID = os.getenv("ANAM_COACH_VOICE_ID", "23d9c8a1-eed2-4d69-8137-9634dde3c67d")
     ANAM_MAX_SESSION_SECONDS = int(os.getenv("ANAM_MAX_SESSION_SECONDS", "900"))
+
+    # ai-avatar service: after a clinician confirms a reading, the approved
+    # result is sent there to render the patient/clinician video report.
+    # Empty = feature disabled. In Docker: http://ai-avatar:9090
+    AVATAR_API_URL = os.getenv("AVATAR_API_URL", "").rstrip("/")
+    AVATAR_TIMEOUT_SECONDS = int(os.getenv("AVATAR_TIMEOUT_SECONDS", "60"))

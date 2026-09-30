@@ -12,6 +12,7 @@ from .interpreter import ReferenceExample, build_interpreter, with_defaults
 from .quality import assess_quality
 from .rules import build_assessment, build_recommendation
 from .storage import get_storage
+from .video_report import scan_id_for
 
 ALLOWED_FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
 
@@ -265,6 +266,9 @@ def build_response(interp: AIInterpretation) -> dict:
             "overlay": f"{base}/interpretations/{interp.id}/overlay.png",
             "report": f"{base}/interpretations/{interp.id}/report",
             "annotate": f"{base}/interpretations/{interp.id}/annotations",
+            # Video report (ai-avatar), created once a clinician confirms the reading.
+            "video_status": f"{base}/reports/{scan_id_for(interp.id)}/video",
+            "video_player": f"/player/{scan_id_for(interp.id)}",
         },
         "disclaimer": "Decision support only. A trained clinician must confirm every result before any treatment.",
     }

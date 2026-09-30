@@ -119,6 +119,14 @@ describe("ScreeningScreen", () => {
     });
     expect(screen.getByText("Confirmed by clinician")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Send by SMS" })).toBeInTheDocument();
+
+    // The avatar video report is requested after confirmation and embedded as an iframe.
+    const frame = await screen.findByTitle("Video report");
+    expect(frame.tagName).toBe("IFRAME");
+    expect(frame).toHaveAttribute("src", "/player/viscan-7");
+    const firstVideoPoll = fetchMock.mock.calls.findIndex(([u]) => String(u) === "/api/v1/reports/viscan-7/video");
+    const annotateIndex = fetchMock.mock.calls.findIndex(([u]) => String(u).endsWith("/annotations"));
+    expect(firstVideoPoll).toBeGreaterThan(annotateIndex);
   });
 
   it("records the other finding and hides the referral link when not suspicious", async () => {

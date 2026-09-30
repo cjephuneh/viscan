@@ -32,6 +32,9 @@ describe("CareScreen", () => {
 
     const directions = screen.getAllByRole("link", { name: "Directions" });
     expect(directions[0].getAttribute("href")).toContain("google.com/maps/dir");
+
+    // The video report for this confirmed reading is embedded here too.
+    expect(await screen.findByTitle("Video report")).toHaveAttribute("src", "/player/viscan-7");
   });
 
   it("refers the patient to a partner hospital", async () => {

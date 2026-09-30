@@ -558,3 +558,76 @@ def test_past_screenings_history(client):
 
     thumb = client.get(row["links"]["thumbnail"])
     assert thumb.status_code == 200 and thumb.mimetype == "image/jpeg"
+
+
+# --- Video report (ai-avatar) after clinician confirmation -------------------
+
+def test_confirmation_creates_video_report(tmp_path, monkeypatch):
+    from app.services import video_report
+
+    calls = []
+
+    def fake_post(url, body, timeout):
+        calls.append((url, body))
+        return 201, {"id": "rep-1", "scan_id": body["scan_id"], "status": "ready"}
+
+    monkeypatch.setattr(video_report, "_post_json", fake_post)
+    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite://", "UPLOAD_DIR": tmp_path,
+                      "INTERPRETER_MODE": "heuristic", "API_KEY": "", "AVATAR_API_URL": "http://ai-avatar:9090"})
+    client = app.test_client()
+
+    res = upload(client, cervix_image(True), patient_external_id="P-VID", age="40", hiv_status="negative")
+    assert res.status_code == 201, res.json
+    interp_id = res.json["interpretation_id"]
+    assert res.json["links"]["video_status"] == f"/api/v1/reports/viscan-{interp_id}/video"
+    assert res.json["links"]["video_player"] == f"/player/viscan-{interp_id}"
+    assert calls == []  # nothing is rendered before the clinician confirms
+
+    ann = client.post(f"/api/v1/interpretations/{interp_id}/annotations",
+                      json={"clinician_id": "DR-1", "via_result": "SUSPICIOUS_FOR_CANCER", "notes": "Refer today."})
+    assert ann.status_code == 201, ann.json
+    assert ann.json["video_report"] == {"scan_id": f"viscan-{interp_id}", "status": "created"}
+
+    url, body = calls[0]
+    assert url == "http://ai-avatar:9090/api/v1/reports"
+    assert body["scan_id"] == f"viscan-{interp_id}"
+    assert body["patient_id"] == "P-VID"
+    assert body["clinician_id"] == "DR-1"
+    # The APPROVED (clinician) result is what gets narrated, not the raw AI one.
+    assert body["screening_result"].startswith("Suspicious for invasive cervical cancer")
+    assert "corrected" in body["clinical_notes"] or "confirmed" in body["clinical_notes"]
+    assert "Refer today." in body["clinical_notes"]
+    assert body["recommendations"]
+    assert 0 <= body["confidence_score"] <= 1
+
+
+def test_video_report_failures_do_not_block_confirmation(tmp_path, monkeypatch):
+    from app.services import video_report
+
+    def failing_post(url, body, timeout):
+        raise video_report.VideoReportError("down")
+
+    monkeypatch.setattr(video_report, "_post_json", failing_post)
+    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite://", "UPLOAD_DIR": tmp_path,
+                      "INTERPRETER_MODE": "heuristic", "API_KEY": "", "AVATAR_API_URL": "http://ai-avatar:9090"})
+    client = app.test_client()
+    interp_id = upload(client, cervix_image(False)).json["interpretation_id"]
+    ann = client.post(f"/api/v1/interpretations/{interp_id}/annotations",
+                      json={"clinician_id": "DR-1", "via_result": "VIA_NEGATIVE"})
+    assert ann.status_code == 201
+    assert ann.json["review_status"] == "reviewed"
+    assert ann.json["video_report"]["status"] == "failed"
+
+    # 409 = report already exists (idempotent re-confirmation)
+    monkeypatch.setattr(video_report, "_post_json", lambda u, b, t: (409, {"detail": "exists"}))
+    again = client.post(f"/api/v1/interpretations/{interp_id}/annotations",
+                        json={"clinician_id": "DR-2", "via_result": "VIA_NEGATIVE"})
+    assert again.json["video_report"]["status"] == "exists"
+
+
+def test_video_report_disabled_without_avatar_url(client):
+    interp_id = upload(client, cervix_image(False)).json["interpretation_id"]
+    ann = client.post(f"/api/v1/interpretations/{interp_id}/annotations",
+                      json={"clinician_id": "DR-1", "via_result": "VIA_NEGATIVE"})
+    assert ann.status_code == 201
+    assert ann.json["video_report"]["status"] == "disabled"

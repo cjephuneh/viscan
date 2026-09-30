@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import type { Intake } from "@/lib/intake";
-import type { CareSummary, Interpretation, PartnerHospital, Pharmacy } from "@/lib/viscan";
+import type { CareSummary, Interpretation, PartnerHospital, Pharmacy, VideoReport } from "@/lib/viscan";
 
 export const interpretationFixture: Interpretation = {
   interpretation_id: 7,
@@ -80,9 +80,25 @@ export const interpretationFixture: Interpretation = {
     overlay: "/api/v1/interpretations/7/overlay.png",
     report: "/api/v1/interpretations/7/report",
     annotate: "/api/v1/interpretations/7/annotations",
+    video_status: "/api/v1/reports/viscan-7/video",
+    video_player: "/player/viscan-7",
   },
   disclaimer: "Decision support only.",
 };
+
+export function videoReportFixture(status: VideoReport["status"] = "completed"): VideoReport {
+  const done = status === "completed";
+  return {
+    report_id: "rep-7",
+    scan_id: "viscan-7",
+    video_id: "anam-vid-7",
+    status,
+    video_url: done ? "https://videos.example/anam-vid-7.mp4" : null,
+    player_url: "/player/viscan-7",
+    duration_seconds: done ? 62 : null,
+    expires_at: null,
+  };
+}
 
 export const hospitalFixture: PartnerHospital = {
   id: 11,
@@ -179,8 +195,17 @@ export const intakeFixture: Intake = {
   flags: [{ level: "alert", text: "Reports postcoital bleeding." }],
 };
 
-export function mockFetch(overrides: { pharmaciesStatus?: number; interpretError?: string; waiting?: Intake[] } = {}) {
+export function mockFetch(
+  overrides: {
+    pharmaciesStatus?: number;
+    interpretError?: string;
+    waiting?: Intake[];
+    /** Video-report poll responses, consumed in order (last one repeats). 404 = report not created yet. */
+    video?: (VideoReport | 404 | 502)[];
+  } = {},
+) {
   let referred = false;
+  const video = [...(overrides.video ?? [videoReportFixture()])];
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -189,7 +214,14 @@ export function mockFetch(overrides: { pharmaciesStatus?: number; interpretError
     if (url.startsWith("/api/v1/intake?")) return json(overrides.waiting ?? []);
     if (url === `/api/v1/intake/${intakeFixture.id}` || url === `/api/v1/intake/code/${intakeFixture.code}`)
       return json(intakeFixture);
-    if (url.endsWith("/annotations")) return json({ agrees_with_ai: true, review_status: "reviewed" }, 201);
+    if (url.endsWith("/annotations"))
+      return json({ agrees_with_ai: true, review_status: "reviewed", video_report: { scan_id: "viscan-7", status: "requested" } }, 201);
+    if (url === "/api/v1/reports/viscan-7/video") {
+      const next = video.length > 1 ? video.shift()! : video[0];
+      if (next === 404) return json({ detail: "Report not found" }, 404);
+      if (next === 502) return json({ error: "The video report service is not reachable." }, 502);
+      return json(next);
+    }
     if (url.endsWith("/care")) return json(careFixture(referred));
     if (url.endsWith("/notifications") && method === "POST") {
       const body = JSON.parse(String(init?.body));

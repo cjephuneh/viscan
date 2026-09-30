@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { Selected } from "@/components/care-map";
 import { SendResults } from "@/components/send-results";
+import { VideoReport } from "@/components/video-report";
 import {
   type CareSummary,
   type PartnerHospital,
@@ -312,6 +313,10 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
             ))}
           </ul>
           <p className="footnote">Pharmacy data © OpenStreetMap contributors. Check opening hours before sending a patient.</p>
+        </section>
+
+        <section className="panel" aria-label="Video report">
+          <VideoReport interpretationId={interpretationId} />
         </section>
 
         <section className="panel" aria-label="Send results">

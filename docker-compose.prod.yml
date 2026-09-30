@@ -104,11 +104,13 @@ services:
       - PORT=3000
       - VISCAN_API_URL=http://ai-interpreter:5050
       - VISCAN_API_KEY=${VISCAN_API_KEY:-}
+      - VISCAN_AVATAR_URL=http://ai-avatar:9090
     networks:
       - viscan-network
 
   # =============================================================
   # 3. AI Interpreter (VIA AI Vision & Mia Intake Avatar)
+  #    Talks to ai-avatar for the post-confirmation video report.
   #    Images are stored in S3/MinIO (bucket ${S3_BUCKET_NAME}),
   #    /data keeps only the SQLite DB when no Postgres is configured.
   # =============================================================
@@ -122,6 +124,9 @@ services:
     environment:
       <<: *s3-env
       S3_PREFIX: interpreter/
+      # After a clinician confirms a reading, the approved result is sent
+      # here to render the avatar video report (embedded by the frontend).
+      AVATAR_API_URL: http://ai-avatar:9090
     volumes:
       - viscan-interpreter-data:/data
     extra_hosts:

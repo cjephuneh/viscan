@@ -68,8 +68,30 @@ export type Interpretation = {
   history: { trend: string };
   review_status: string;
   engine: { name: string; model: string; latency_ms: number };
-  links: { self: string; image: string; overlay: string; report: string; annotate: string };
+  links: {
+    self: string;
+    image: string;
+    overlay: string;
+    report: string;
+    annotate: string;
+    /** ai-avatar video report (created after clinician confirmation). */
+    video_status?: string;
+    video_player?: string;
+  };
   disclaimer: string;
+};
+
+export type VideoStatus = "pending" | "running" | "completed" | "failed" | "uninitiated";
+
+export type VideoReport = {
+  report_id: string;
+  scan_id: string;
+  video_id: string | null;
+  status: VideoStatus;
+  video_url: string | null;
+  player_url: string | null;
+  duration_seconds: number | null;
+  expires_at: string | null;
 };
 
 export type Supply = { item: string; why: string; prescription: boolean };
@@ -229,3 +251,24 @@ export function viaToVerdict(via: ViaResult): Verdict {
 
 export const humanize = (value: string | null | undefined) =>
   value ? value.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase()) : "—";
+
+/** Deterministic id the interpreter uses when it asks ai-avatar for the video report. */
+export function videoScanId(interpretationId: number): string {
+  return `viscan-${interpretationId}`;
+}
+
+export function videoPlayerUrl(interpretationId: number): string {
+  return `/player/${videoScanId(interpretationId)}`;
+}
+
+/**
+ * Video report status from ai-avatar. Returns `null` while the report does not
+ * exist yet (the interpreter creates it right after the clinician confirms).
+ */
+export async function getVideoReport(interpretationId: number): Promise<VideoReport | null> {
+  const res = await fetch(`${API}/reports/${videoScanId(interpretationId)}/video`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.detail || `Request failed (${res.status})`);
+  return data as VideoReport;
+}

@@ -119,6 +119,12 @@ entrypoint and routes to the four services (see [`nginx/nginx.conf`](./nginx/ngi
 | `/api/v1/{facilities,screenings,analysis-queue,analysis-jobs,ai-results,maps,notifications,language,voice}/`, `/api/v1/health/`, `/api/v1/docs`, `/api/v1/backend-images/<id>/file` | backend |
 | `/api/v1/reports`, `/api/v1/personas`, `/player/*` | ai-avatar |
 
+**Video report flow:** when the clinician confirms (or corrects) a reading (`POST /api/v1/interpretations/<id>/annotations`),
+ai-interpreter sends the *approved* result to ai-avatar (`POST /api/v1/reports`, `scan_id = viscan-<interpretation id>`,
+configured with `AVATAR_API_URL`). The frontend polls `/api/v1/reports/viscan-<id>/video` and, once the video is `completed`,
+embeds the player `/player/viscan-<id>` in an iframe on the screening and care pages. In local development (no nginx) the
+Next.js app proxies those two paths to `VISCAN_AVATAR_URL` (default `http://127.0.0.1:9090`).
+
 VIA images are stored in the S3-compatible **MinIO** bucket `via-images` (prefixes `interpreter/` and `backend/`), configured through
 `S3_*` in the root `.env` (see [`.env.example`](./.env.example)). Without `S3_ENDPOINT` the services fall back to local disk.
 
