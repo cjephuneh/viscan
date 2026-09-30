@@ -283,3 +283,16 @@ async function launchLiveAvatar(reportId) {
 }
 ```
 
+---
+
+## 🧪 Automated Testing
+
+Run the test suite (22 unit and integration tests) covering all API endpoints, database persistence, script formatting, and video pipelines:
+
+```bash
+cd ai-avatar
+source .venv/bin/activate
+pytest -v
+```
+
+
