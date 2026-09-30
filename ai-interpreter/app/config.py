@@ -32,6 +32,16 @@ class Config:
     UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", BASE_DIR / "instance" / "uploads"))
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024
 
+    # S3-compatible blob storage (MinIO). When S3_ENDPOINT is set, images are
+    # stored in the bucket instead of UPLOAD_DIR (which is then only a fallback).
+    S3_ENDPOINT = os.getenv("S3_ENDPOINT", "").strip()
+    S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
+    S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
+    S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "via-images")
+    S3_REGION = os.getenv("S3_REGION", "us-east-1")
+    S3_FORCE_PATH_STYLE = os.getenv("S3_FORCE_PATH_STYLE", "true").lower() in ("1", "true", "yes")
+    S3_PREFIX = os.getenv("S3_PREFIX", "interpreter/")
+
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
     OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "")

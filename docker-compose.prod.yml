@@ -1,0 +1,181 @@
+# Production stack. Only the Nginx gateway is published (port 80); every other
+# service is reachable solely through it on the private viscan-network.
+#
+# Secrets/credentials are NOT in this file. They come from:
+#   - ./.env                 -> shared values (DB_*, S3_*) substituted below
+#   - ./<service>/.env       -> per-service secrets (API keys, etc.)
+# See .env.example and <service>/.env.example.
+
+x-s3-env: &s3-env
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+  S3_BUCKET_NAME: ${S3_BUCKET_NAME:-via-images}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+
+services:
+  # =============================================================
+  # 1. Reverse Proxy Gateway (Nginx) - the only public entrypoint
+  # =============================================================
+  gateway:
+    build:
+      context: ./nginx
+    container_name: viscan-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-viscan.site}
+    volumes:
+      - viscan-letsencrypt:/etc/letsencrypt:ro
+      - viscan-certbot-www:/var/www/certbot
+    depends_on:
+      - frontend
+      - ai-interpreter
+      - ai-avatar
+      - backend
+    networks:
+      - viscan-network
+
+  # =============================================================
+  # 1b. Let's Encrypt sidecar. Waits until ${DOMAIN} resolves in DNS,
+  #     then issues/renews the certificate through the gateway's
+  #     /.well-known/acme-challenge/ (HTTP-01). The gateway notices the
+  #     new files and reloads by itself (nginx/40-viscan-tls.sh).
+  # =============================================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: viscan-certbot
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-viscan.site}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
+      CERTBOT_STAGING: ${CERTBOT_STAGING:-}
+    volumes:
+      - viscan-letsencrypt:/etc/letsencrypt
+      - viscan-certbot-www:/var/www/certbot
+    depends_on:
+      - gateway
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        trap 'exit 0' TERM INT
+        while :; do
+          if ! getent hosts "$$DOMAIN" >/dev/null 2>&1; then
+            echo "[certbot] $$DOMAIN does not resolve yet; checking again in 10 min"
+            sleep 600 & wait $$!; continue
+          fi
+          if [ -n "$$CERTBOT_EMAIL" ]; then mail="--email $$CERTBOT_EMAIL"; else mail="--register-unsafely-without-email"; fi
+          if [ -n "$$CERTBOT_STAGING" ]; then staging="--staging"; else staging=""; fi
+          # Include www only if it has a DNS record, otherwise the whole order fails.
+          if getent hosts "www.$$DOMAIN" >/dev/null 2>&1; then names="-d $$DOMAIN -d www.$$DOMAIN"; else names="-d $$DOMAIN"; fi
+          if certbot certonly --webroot -w /var/www/certbot $$names \
+               --cert-name "$$DOMAIN" $$mail $$staging --agree-tos --non-interactive --keep-until-expiring; then
+            sleep 12h & wait $$!
+          else
+            echo "[certbot] issuance/renewal attempt failed; retrying in 1 h"
+            sleep 1h & wait $$!
+          fi
+        done
+    networks:
+      - viscan-network
+
+  # =============================================================
+  # 2. Next.js Frontend (Clinician & Patient Intake UI)
+  #    Browser calls /api/v1/* which Nginx routes directly to the
+  #    services; VISCAN_API_URL is only used by Next's own proxy.
+  # =============================================================
+  frontend:
+    build:
+      context: ./frontend
+    container_name: viscan-frontend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
+      - VISCAN_API_URL=http://ai-interpreter:5050
+      - VISCAN_API_KEY=${VISCAN_API_KEY:-}
+    networks:
+      - viscan-network
+
+  # =============================================================
+  # 3. AI Interpreter (VIA AI Vision & Mia Intake Avatar)
+  #    Images are stored in S3/MinIO (bucket ${S3_BUCKET_NAME}),
+  #    /data keeps only the SQLite DB when no Postgres is configured.
+  # =============================================================
+  ai-interpreter:
+    build:
+      context: ./ai-interpreter
+    container_name: viscan-ai-interpreter
+    restart: unless-stopped
+    env_file:
+      - ./ai-interpreter/.env
+    environment:
+      <<: *s3-env
+      S3_PREFIX: interpreter/
+    volumes:
+      - viscan-interpreter-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - viscan-network
+
+  # =============================================================
+  # 4. AI Avatar Microservice (Clinical Video Report Generator)
+  # =============================================================
+  ai-avatar:
+    build:
+      context: ./ai-avatar
+    container_name: viscan-ai-avatar
+    restart: unless-stopped
+    env_file:
+      - ./ai-avatar/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - viscan-network
+
+  # =============================================================
+  # 5. Core VISCAN Backend API (Screenings, Queue & Notifications)
+  #    Talks to Postgres on the Docker host and to ai-interpreter
+  #    for VIA analysis. Images are stored in S3/MinIO.
+  # =============================================================
+  backend:
+    build:
+      context: ./backend
+    container_name: viscan-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      <<: *s3-env
+      S3_PREFIX: backend/
+      PORT: "8080"
+      FLASK_ENV: production
+      FLASK_CONFIG: production
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_NAME: ${DB_NAME:-}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
+      AI_API_URL: http://ai-interpreter:5050
+      AI_API_KEY: ${VISCAN_API_KEY:-}
+      PUBLIC_BASE_URL: http://backend:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - viscan-network
+
+networks:
+  viscan-network:
+    driver: bridge
+
+volumes:
+  viscan-interpreter-data:
+  viscan-letsencrypt:
+  viscan-certbot-www:

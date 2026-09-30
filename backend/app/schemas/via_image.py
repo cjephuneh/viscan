@@ -15,7 +15,9 @@ class VIAImageSchema(Schema):
     ai_results = fields.Nested(AIResultSchema, many=True, dump_only=True)
 
     def build_file_url(self, obj) -> str:
-        return f"/api/v1/images/{obj.id}/file"
+        # /backend-images/ is the path that is unambiguous behind the Nginx
+        # gateway (/api/v1/images/<id>/file there belongs to ai-interpreter).
+        return f"/api/v1/backend-images/{obj.id}/file"
 
     def dump_analysis_job(self, obj):
         jobs = list(obj.analysis_jobs)

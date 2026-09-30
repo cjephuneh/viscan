@@ -1,9 +1,8 @@
 import hmac
 import json
 from datetime import date
-from pathlib import Path
 
-from flask import Blueprint, Response, current_app, jsonify, render_template, request, send_from_directory
+from flask import Blueprint, Response, abort, current_app, jsonify, render_template, request
 
 from .models import (
     DIAGNOSIS_METHODS, DIAGNOSIS_RESULTS, HIV_STATUSES, HPV_STATUSES, SCREENING_VERDICTS, SYMPTOMS,
@@ -19,6 +18,7 @@ from .services.metrics import compute_metrics
 from .services.places import PlacesUnavailable, haversine_km, nearby_pharmacies
 from .services.overlay import render_overlay
 from .services.pipeline import PipelineError, analyze_image, build_response
+from .services.storage import get_storage
 
 api_bp = Blueprint("api", __name__)
 
@@ -114,6 +114,14 @@ def _get_or_404(model, obj_id):
     return db.get_or_404(model, obj_id, description=f"{model.__name__} {obj_id} not found.")
 
 
+def _image_bytes_or_404(image: ViaImage) -> bytes:
+    """Fetch the stored image (S3/MinIO or local disk) or 404 if the blob is gone."""
+    try:
+        return get_storage().get(image.filename)
+    except FileNotFoundError:
+        abort(404, description=f"Image file for ViaImage {image.id} not found in storage.")
+
+
 @api_bp.get("/health")
 def health():
     cfg = current_app.config
@@ -177,7 +185,7 @@ def get_interpretation(interp_id):
 @api_bp.get("/interpretations/<int:interp_id>/overlay.png")
 def get_overlay(interp_id):
     interp = _get_or_404(AIInterpretation, interp_id)
-    png = render_overlay(Path(current_app.config["UPLOAD_DIR"]) / interp.image.filename, interp)
+    png = render_overlay(_image_bytes_or_404(interp.image), interp)
     return Response(png, mimetype="image/png")
 
 
@@ -232,24 +240,31 @@ def worklist():
 @api_bp.get("/images/<int:image_id>/file")
 def get_image_file(image_id):
     image = _get_or_404(ViaImage, image_id)
-    return send_from_directory(current_app.config["UPLOAD_DIR"], image.filename, mimetype=image.mime_type)
+    return Response(_image_bytes_or_404(image), mimetype=image.mime_type,
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @api_bp.get("/images/<int:image_id>/thumb.jpg")
 def get_image_thumbnail(image_id):
-    """Small JPEG preview (max 320 px), cached next to the uploads."""
+    """Small JPEG preview (max 320 px), cached in blob storage under thumbs/."""
+    import io
+
     from PIL import Image
 
     image = _get_or_404(ViaImage, image_id)
-    upload_dir = Path(current_app.config["UPLOAD_DIR"])
-    thumb = upload_dir / "thumbs" / f"{image.id}.jpg"
-    if not thumb.exists():
-        thumb.parent.mkdir(parents=True, exist_ok=True)
-        with Image.open(upload_dir / image.filename) as img:
+    storage = get_storage()
+    thumb_key = f"thumbs/{image.id}.jpg"
+    try:
+        data = storage.get(thumb_key)
+    except FileNotFoundError:
+        with Image.open(io.BytesIO(_image_bytes_or_404(image))) as img:
             img = img.convert("RGB")
             img.thumbnail((320, 320))
-            img.save(thumb, "JPEG", quality=80)
-    return send_from_directory(thumb.parent, thumb.name, mimetype="image/jpeg", max_age=86400)
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=80)
+        data = buf.getvalue()
+        storage.put(thumb_key, data, "image/jpeg")
+    return Response(data, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @api_bp.get("/screenings")

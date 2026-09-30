@@ -8,6 +8,7 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from app.errors import APIError
+from app.services.storage import StorageError, get_storage
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
@@ -57,23 +58,25 @@ def validate_and_store_image(file: FileStorage, screening_id: int) -> tuple[str,
     except OSError as exc:
         raise APIError("File content is not a valid image.", 400) from exc
 
-    upload_root = Path(current_app.config["UPLOAD_FOLDER"]).resolve()
-    screening_dir = upload_root / f"screening_{screening_id}"
-    screening_dir.mkdir(parents=True, exist_ok=True)
+    # Storage key; kept in VIAImage.file_path. Same shape for S3 and local disk.
+    storage_key = f"screening_{screening_id}/{uuid.uuid4().hex}{extension}"
+    try:
+        get_storage().put(storage_key, raw, media_type)
+    except StorageError as exc:
+        current_app.logger.exception("Image storage failed")
+        raise APIError("Image storage is unavailable.", 503) from exc
 
-    filename = f"{uuid.uuid4().hex}{extension}"
-    absolute_path = screening_dir / filename
-    absolute_path.write_bytes(raw)
-
-    relative_path = absolute_path.relative_to(upload_root).as_posix()
-    return relative_path, media_type, len(raw)
+    return storage_key, media_type, len(raw)
 
 
-def resolve_image_path(relative_path: str) -> Path:
-    upload_root = Path(current_app.config["UPLOAD_FOLDER"]).resolve()
-    candidate = (upload_root / relative_path).resolve()
-    if upload_root not in candidate.parents and candidate != upload_root:
+def load_image_bytes(storage_key: str) -> bytes:
+    """Read a stored VIA image (S3/MinIO or local disk) by its storage key."""
+    if not storage_key or storage_key.startswith("/") or ".." in Path(storage_key).parts:
         raise APIError("Invalid image path.", 400)
-    if not candidate.is_file():
-        raise APIError("Image file not found on disk.", 404)
-    return candidate
+    try:
+        return get_storage().get(storage_key)
+    except FileNotFoundError as exc:
+        raise APIError("Image file not found in storage.", 404) from exc
+    except StorageError as exc:
+        current_app.logger.exception("Image storage read failed")
+        raise APIError("Image storage is unavailable.", 503) from exc

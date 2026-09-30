@@ -16,7 +16,7 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000 \
-    VISCAN_API_URL=http://backend:5050
+    VISCAN_API_URL=http://ai-interpreter:5050
 
 RUN addgroup -S -g 1001 viscan && adduser -S -u 1001 -G viscan viscan
 COPY --from=build --chown=viscan:viscan /app/.next/standalone ./

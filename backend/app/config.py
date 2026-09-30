@@ -67,8 +67,21 @@ class BaseConfig:
     VOICE_API_KEY = os.getenv("VOICE_API_KEY", "")
     VOICE_API_URL = os.getenv("VOICE_API_URL", "")
 
+    # Optional X-API-Key sent to the AI interpreter (VISCAN_API_KEY on its side).
+    AI_API_KEY = os.getenv("AI_API_KEY", "")
+
     MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
+
+    # S3-compatible blob storage (MinIO). When S3_ENDPOINT is set, VIA images
+    # are stored in the bucket; otherwise they go to UPLOAD_FOLDER on disk.
+    S3_ENDPOINT = os.getenv("S3_ENDPOINT", "").strip()
+    S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
+    S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
+    S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "via-images")
+    S3_REGION = os.getenv("S3_REGION", "us-east-1")
+    S3_FORCE_PATH_STYLE = os.getenv("S3_FORCE_PATH_STYLE", "true").lower() in ("1", "true", "yes")
+    S3_PREFIX = os.getenv("S3_PREFIX", "backend/")
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 
     # One in-process worker drains analysis_jobs. The database still allows
@@ -107,7 +120,9 @@ class TestingConfig(BaseConfig):
         "poolclass": StaticPool,
     }
     AI_API_URL = "http://ai.test"
+    AI_API_KEY = ""
     PUBLIC_BASE_URL = "http://localhost:8080"
+    S3_ENDPOINT = ""  # tests always use local disk storage
     AI_TIMEOUT_SECONDS = 5
     EXTERNAL_TIMEOUT_SECONDS = 5
     MAPS_API_KEY = ""

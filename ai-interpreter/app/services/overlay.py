@@ -16,9 +16,13 @@ def _font(size: int):
     return ImageFont.load_default()
 
 
-def render_overlay(image_path: Path, interpretation) -> bytes:
-    """Draw approximate lesion boxes, lesion numbers and a verdict banner on the image."""
-    img = Image.open(image_path).convert("RGB")
+def render_overlay(image: bytes | Path, interpretation) -> bytes:
+    """Draw approximate lesion boxes, lesion numbers and a verdict banner on the image.
+
+    ``image`` is either the raw image bytes (from blob storage) or a local path.
+    """
+    source = io.BytesIO(image) if isinstance(image, (bytes, bytearray)) else image
+    img = Image.open(source).convert("RGB")
     img.thumbnail((1280, 1280))
     w, h = img.size
     draw = ImageDraw.Draw(img, "RGBA")

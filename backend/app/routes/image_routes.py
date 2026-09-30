@@ -1,3 +1,5 @@
+import io
+
 from flask import send_file
 from flask.views import MethodView
 from flask_smorest import Blueprint
@@ -9,7 +11,7 @@ from app.models import Screening, VIAImage
 from app.schemas.common import DetailSchema
 from app.schemas.via_image import VIAImageSchema
 from app.services.queue_service import enqueue_image
-from app.utils.images import resolve_image_path, validate_and_store_image
+from app.utils.images import load_image_bytes, validate_and_store_image
 
 blp = Blueprint(
     "images",
@@ -69,9 +71,11 @@ class ImageDetail(MethodView):
 
 
 @blp.route("/images/<int:image_id>/file")
+@blp.route("/backend-images/<int:image_id>/file")  # gateway-safe alias
 class ImageFile(MethodView):
     @blp.alt_response(404, schema=DetailSchema)
     def get(self, image_id):
         image = _get_image_or_404(image_id)
-        path = resolve_image_path(image.file_path)
-        return send_file(path, mimetype=image.media_type, as_attachment=False)
+        data = load_image_bytes(image.file_path)
+        return send_file(io.BytesIO(data), mimetype=image.media_type, as_attachment=False,
+                         max_age=86400)
