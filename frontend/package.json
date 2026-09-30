@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anam-ai/js-sdk": "^4.27.1",
     "leaflet": "^1.9.4",
     "next": "^16.3.7",
     "react": "^19.3.0",

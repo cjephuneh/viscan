@@ -125,7 +125,7 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
       <div className="atmosphere" aria-hidden="true" />
 
       <header className="care-header">
-        <Link href="/" className="back-link">
+        <Link href="/screening" className="back-link">
           ← Back to screening
         </Link>
         <p className="eyebrow">After the screen</p>

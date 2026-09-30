@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ScreeningScreen } from "@/components/screening-screen";
-import { interpretationFixture, mockFetch } from "./fixtures";
+import { intakeFixture, interpretationFixture, mockFetch } from "./fixtures";
 
 function makeImageFile(name = "via-capture.png", type = "image/png") {
   return new File(["fake-image-bytes"], name, { type });
@@ -16,6 +16,9 @@ function fileInput(container: HTMLElement) {
 function uploadImage(container: HTMLElement, file: File = makeImageFile()) {
   fireEvent.change(fileInput(container), { target: { files: [file] } });
 }
+
+const interpretCall = (mock: ReturnType<typeof mockFetch>) =>
+  mock.mock.calls.find(([u]) => String(u) === "/api/v1/interpret");
 
 const typeInto = (element: HTMLElement, value: string) => fireEvent.change(element, { target: { value } });
 
@@ -55,7 +58,7 @@ describe("ScreeningScreen", () => {
     uploadImage(container);
     fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
     expect(screen.getByText("Add the patient ID before reading the image.")).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(interpretCall(fetchMock)).toBeUndefined();
   });
 
   it("sends the image and visit details, then shows the suspicious reading", async () => {
@@ -68,8 +71,7 @@ describe("ScreeningScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
 
     expect(await screen.findByText("Suspicious", { selector: ".classification" })).toBeInTheDocument();
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/v1/interpret");
+    const [, init] = interpretCall(fetchMock)!;
     const form = init!.body as FormData;
     expect(form.get("patient_external_id")).toBe("PT-1");
     expect(form.get("age")).toBe("38");
@@ -86,7 +88,7 @@ describe("ScreeningScreen", () => {
   });
 
   it("shows the API error and lets the clinician retry", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: "Model unavailable" }), { status: 502 }));
+    fetchMock = mockFetch({ interpretError: "Model unavailable" });
     const { container } = render(<ScreeningScreen />);
     typeInto(screen.getByLabelText("Patient ID"), "PT-1");
     uploadImage(container);
@@ -163,5 +165,34 @@ describe("ScreeningScreen", () => {
     expect(await screen.findByText(clinical_summary.rationale)).toBeInTheDocument();
     expect(screen.getByText(recommendation.action)).toBeInTheDocument();
     expect(screen.getByText(clinical_summary.patient_explanation)).toBeInTheDocument();
+  });
+
+  it("prefills the visit from a patient who checked in with Mia and links the reading", async () => {
+    fetchMock = mockFetch({ waiting: [intakeFixture] });
+    const { container } = render(<ScreeningScreen />);
+    fireEvent.click(await screen.findByRole("button", { name: /Grace Uwase/ }));
+
+    expect(screen.getByRole("heading", { name: /Grace Uwase, 38/ })).toBeInTheDocument();
+    expect(screen.getByText("Reports postcoital bleeding.")).toBeInTheDocument();
+    expect(screen.getByText(/Arrived very nervous \(5\/5\), now okay \(2\/5\)/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Patient ID")).toHaveValue("INT-K7M3Q");
+    expect(screen.getByLabelText("Age")).toHaveValue(38);
+    expect(screen.getByLabelText("HIV status")).toHaveValue("positive");
+    expect(screen.getByLabelText("Bleeding after sex")).toBeChecked();
+
+    typeInto(screen.getByLabelText("Clinician ID"), "nurse-07");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm this finding" }));
+    const form = interpretCall(fetchMock)![1]!.body as FormData;
+    expect(form.get("intake_id")).toBe("5");
+    expect(await screen.findByLabelText("Patient phone")).toHaveValue("+250788111222");
+    expect(screen.getByRole("button", { name: "Send by WhatsApp" })).toBeInTheDocument();
+  });
+
+  it("loads a check-in from the URL", async () => {
+    render(<ScreeningScreen intakeId="5" />);
+    expect(await screen.findByRole("heading", { name: /Grace Uwase/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Patient ID")).toHaveValue("INT-K7M3Q");
   });
 });

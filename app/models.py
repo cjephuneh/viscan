@@ -336,6 +336,70 @@ class Notification(db.Model):
         }
 
 
+class IntakeSession(db.Model):
+    """Pre-screening conversation between the patient and the AI avatar."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(12), unique=True, index=True, nullable=False)
+    status = db.Column(db.String(16), default="in_progress", index=True)
+    channel = db.Column(db.String(16), default="avatar")
+    anam_session_id = db.Column(db.String(64))
+    full_name = db.Column(db.String(120))
+    preferred_name = db.Column(db.String(60))
+    age = db.Column(db.Integer)
+    sex = db.Column(db.String(16))
+    language = db.Column(db.String(32))
+    answers = db.Column(db.JSON, default=dict)
+    feelings = db.Column(db.JSON, default=list)
+    concerns = db.Column(db.JSON, default=list)
+    patient_questions = db.Column(db.JSON, default=list)
+    topics_covered = db.Column(db.JSON, default=list)
+    breathing_exercises = db.Column(db.Integer, default=0)
+    summary = db.Column(db.Text)
+    transcript = db.Column(db.JSON, default=list)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"))
+    visit_id = db.Column(db.Integer, db.ForeignKey("screening_visit.id"))
+    interpretation_id = db.Column(db.Integer, db.ForeignKey("ai_interpretation.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    completed_at = db.Column(db.DateTime(timezone=True))
+
+    def anxiety(self) -> dict:
+        levels = [f["level"] for f in self.feelings or [] if isinstance(f.get("level"), int)]
+        start, end = (levels[0], levels[-1]) if levels else (None, None)
+        return {"start": start, "end": end, "change": (end - start) if len(levels) > 1 else None}
+
+    def to_dict(self, include_transcript: bool = False):
+        data = {
+            "id": self.id,
+            "code": self.code,
+            "status": self.status,
+            "channel": self.channel,
+            "anam_session_id": self.anam_session_id,
+            "full_name": self.full_name,
+            "preferred_name": self.preferred_name,
+            "age": self.age,
+            "sex": self.sex,
+            "language": self.language,
+            "answers": self.answers or {},
+            "feelings": self.feelings or [],
+            "anxiety": self.anxiety(),
+            "concerns": self.concerns or [],
+            "patient_questions": self.patient_questions or [],
+            "topics_covered": self.topics_covered or [],
+            "breathing_exercises": self.breathing_exercises or 0,
+            "summary": self.summary,
+            "patient_id": self.patient_id,
+            "visit_id": self.visit_id,
+            "interpretation_id": self.interpretation_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+        }
+        if include_transcript:
+            data["transcript"] = self.transcript or []
+        return data
+
+
 class DiagnosisRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"), nullable=False)

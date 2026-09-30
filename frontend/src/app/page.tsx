@@ -1,5 +1,5 @@
-import { ScreeningScreen } from "@/components/screening-screen";
+import { WelcomeScreen } from "@/components/welcome-screen";
 
-export default function HomePage() {
-  return <ScreeningScreen />;
+export default function WelcomePage() {
+  return <WelcomeScreen />;
 }

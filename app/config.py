@@ -48,3 +48,10 @@ class Config:
         "https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter",
     ).split(",")
     SEED_DEMO_PARTNERS = os.getenv("SEED_DEMO_PARTNERS", "1") == "1"
+
+    ANAM_API_KEY = os.getenv("ANAM_API_KEY", "")
+    ANAM_BASE_URL = os.getenv("ANAM_BASE_URL", "https://api.anam.ai/v1")
+    ANAM_PERSONA_ID = os.getenv("ANAM_PERSONA_ID", "34584421-e431-4c3e-b7c5-eece5793a7dc")
+    # GPT 4.1 Mini: reliable client-tool calling. The persona's default (GPT OSS 120B) leaks tool calls as text.
+    ANAM_LLM_ID = os.getenv("ANAM_LLM_ID", "0934d97d-0c3a-4f33-91b0-5e136a0ef466")
+    ANAM_MAX_SESSION_SECONDS = int(os.getenv("ANAM_MAX_SESSION_SECONDS", "900"))

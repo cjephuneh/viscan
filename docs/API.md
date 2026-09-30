@@ -37,6 +37,7 @@ recommendation. Every result is stored and must be confirmed by a clinician.
    - [Partner hospitals](#get-partner-hospitals)
    - [Refer to a partner hospital](#post-interpretationsidreferrals)
    - [Send results by SMS / WhatsApp](#post-interpretationsidnotifications)
+   - [Pre-screening intake with the AI avatar](#pre-screening-intake-ai-avatar)
 5. [How a result is produced](#how-a-result-is-produced)
 6. [Data model](#data-model)
 7. [Configuration](#configuration)
@@ -132,6 +133,7 @@ assessment are stored. Typical latency with `gpt-5` is 30-60 s.
 | `contraception` | string | no | |
 | `previously_treated` | bool | no | Prior treatment for cervical precancer |
 | `previous_screening_result` | `via_result` | no | If omitted, the last stored result for the patient is used |
+| `intake_id` | int | no | Links this reading to a pre-screening intake (the response echoes `intake_id`) |
 | `visit_date` | date | no | Defaults to today |
 | `clinician_id` | string | no | Who performed the screening |
 | `site` / `device` | string | no | Screening site and camera/device |
@@ -579,6 +581,87 @@ Send the patient their result. **Currently a dummy provider:** the message is st
 
 ---
 
+<a id="pre-screening-intake-ai-avatar"></a>
+## Pre-screening intake (AI avatar)
+
+Before the exam the patient talks to **Mia**, an [Anam](https://docs.anam.ai/) avatar. Mia says
+she is an AI guide, asks name, age and sex, checks how nervous the patient is (1-5), explains VIA
+with on-screen cards, runs a breathing exercise if needed, asks the health questions and finishes
+with a 5-letter **check-in code**. Everything is stored in an `intake_session` and pre-fills the
+clinician's screening form.
+
+The Anam API key stays on the server. The browser gets a short-lived session token whose persona
+config carries the system prompt and eight **client tools**. Each tool call is forwarded by the
+browser to `POST /intake/{id}/events`, and the returned `message` is sent back to the LLM.
+
+| Tool | Event `type` | `data` |
+|---|---|---|
+| `save_patient_details` | `details` | `full_name`, `preferred_name`, `age`, `sex` (`female`/`male`/`intersex`/`prefer_not_to_say`) |
+| `save_answer` | `answer` | `question`, `value`, `said` (see questions below) |
+| `record_feeling` | `feeling` | `level` 1 (relaxed) - 5 (very nervous), `note` |
+| `show_topic` | `topic` | `topic`: `what_is_via`, `why_screening_matters`, `what_to_expect`, `the_speculum`, `the_vinegar_test`, `how_long`, `results_same_day`, `if_positive_treatment`, `privacy`, `pain_and_comfort` |
+| `start_breathing_exercise` | `breathing` | `rounds` 1-5 |
+| `note_concern` | `concern` | `concern`, `category` (`pain`, `embarrassment`, `results`, `cancer_fear`, `cost`, `privacy`, `partner`, `other`) |
+| `log_patient_question` | `question` | `question`, `answered` |
+| `finish_intake` | `finish` | `summary` (for the nurse); response contains the check-in code |
+| (browser) | `transcript` | `messages: [{role, content}]` |
+
+Questions for `save_answer` and how values are normalised: `previous_screening`
+(`never`/`negative`/`positive`/`unknown`), `previously_treated`, `pregnant`, `menstruating_now`,
+`smoker`, `consent` (yes/no → bool, unsure → null), `symptoms` (comma list of symptom enums),
+`hiv_status` (`positive`/`negative`/`unknown`/`prefer_not_to_say`), `parity` (number),
+`contraception` (text), `phone` (digits and `+`), `result_channel` (`sms`/`whatsapp`/`none`).
+
+### `GET /avatar/persona`
+
+`{"available": true, "name": "Mia", "image_url": "..."}`. `available` is false when Anam is not
+configured or unreachable.
+
+### `POST /intake`
+
+`{"language": "en", "channel": "avatar" | "form"}` → `201` with the intake (below).
+
+### `POST /intake/{id}/avatar-token`
+
+`{"session_token": "...", "persona": {"name": "Mia", "image_url": "..."}}`. Returns `503` when the
+avatar is unavailable; the UI then falls back to a short form that sends the same events.
+
+### `POST /intake/{id}/events`
+
+`{"type": "answer", "data": {"question": "pregnant", "value": "no", "said": "no"}, "anam_session_id": "optional"}`
+→ `{"message": "Saved pregnant.", "intake": {...}}`. Unknown types, questions or topics return `400`.
+
+### `GET /intake/{id}` · `GET /intake/code/{code}` · `GET /intake`
+
+Single intake (`?transcript=1` includes the conversation), lookup by check-in code
+(case-insensitive), or a list filtered by `status`, `unscreened=1` (not yet linked to a reading)
+and `limit`.
+
+```json
+{
+  "id": 5, "code": "K7M3Q", "status": "completed", "channel": "avatar",
+  "full_name": "Grace Uwase", "preferred_name": "Grace", "age": 38, "sex": "female",
+  "answers": {"pregnant": {"value": false, "said": "no", "at": "..."}},
+  "feelings": [{"level": 5, "note": "scared", "at": "..."}, {"level": 2, "note": "", "at": "..."}],
+  "anxiety": {"start": 5, "end": 2, "change": -3},
+  "concerns": [{"concern": "Worried it will hurt", "category": "pain", "at": "..."}],
+  "patient_questions": [], "topics_covered": ["what_is_via", "what_to_expect"],
+  "breathing_exercises": 1, "summary": "...",
+  "patient_id": null, "visit_id": null, "interpretation_id": null,
+  "prefill": {"patient_external_id": "INT-K7M3Q", "age": 38, "hiv_status": "positive", "pregnant": false,
+              "previously_treated": null, "previous_screening_result": null, "parity": 3, "smoker": false,
+              "contraception": null, "symptoms": ["postcoital_bleeding"], "phone": "+250788111222",
+              "result_channel": "whatsapp"},
+  "flags": [{"level": "alert", "text": "Reports postcoital bleeding."}]
+}
+```
+
+`prefill` uses the same field names as `POST /interpret`. `flags` are sorted alert → warn → info
+(symptoms, no consent, pregnancy, menstruation, HIV, age outside 25-65, still anxious, concerns,
+unanswered questions).
+
+---
+
 ## How a result is produced
 
 1. **Validation & storage** — image type/size checked, SHA-256 computed, file stored.
@@ -617,6 +700,7 @@ confidence (demo/testing only).
 | `partner_hospital` | Referral destinations with location and services |
 | `referral` | Referral of a screen to a partner hospital |
 | `notification` | Result messages sent to patients (SMS / WhatsApp; currently simulated) |
+| `intake_session` | Pre-screening conversation with the AI avatar: details, answers, feelings, concerns, questions, topics, transcript, check-in code |
 
 Tables are created automatically on startup.
 
@@ -638,4 +722,9 @@ Tables are created automatically on startup.
 | `PORT` | `5050` | HTTP port |
 | `DEFAULT_LATITUDE`, `DEFAULT_LONGITUDE` | `-1.9441`, `30.0619` | Default map centre (clinic location) |
 | `OVERPASS_URLS` | public mirrors | Comma-separated Overpass endpoints for the pharmacy search |
+| `ANAM_API_KEY` | – | Enables the Mia intake avatar (server-side only) |
+| `ANAM_PERSONA_ID` | `34584421-e431-4c3e-b7c5-eece5793a7dc` | Anam persona (avatar and voice) |
+| `ANAM_LLM_ID` | GPT 4.1 Mini | Anam LLM for the intake conversation; needs reliable tool calling |
+| `ANAM_MAX_SESSION_SECONDS` | `900` | Hard cap per avatar session |
+| `ANAM_BASE_URL` | `https://api.anam.ai/v1` | Anam API base |
 | `SEED_DEMO_PARTNERS` | on | Seed demo partner hospitals when the table is empty |

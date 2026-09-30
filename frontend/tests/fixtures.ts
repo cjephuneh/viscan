@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import type { Intake } from "@/lib/intake";
 import type { CareSummary, Interpretation, PartnerHospital, Pharmacy } from "@/lib/viscan";
 
 export const interpretationFixture: Interpretation = {
@@ -131,12 +132,63 @@ export function careFixture(referred = false): CareSummary {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-export function mockFetch(overrides: { pharmaciesStatus?: number } = {}) {
+export const intakeFixture: Intake = {
+  id: 5,
+  code: "K7M3Q",
+  status: "completed",
+  channel: "avatar",
+  full_name: "Grace Uwase",
+  preferred_name: "Grace",
+  age: 38,
+  sex: "female",
+  language: "en",
+  answers: {
+    pregnant: { value: false, said: "no", at: "" },
+    hiv_status: { value: "positive", said: "positive", at: "" },
+    symptoms: { value: ["postcoital_bleeding"], said: "bleeding after sex", at: "" },
+  },
+  feelings: [
+    { level: 5, note: "scared", at: "" },
+    { level: 2, note: "", at: "" },
+  ],
+  anxiety: { start: 5, end: 2, change: -3 },
+  concerns: [{ concern: "Worried it will hurt", category: "pain", at: "" }],
+  patient_questions: [],
+  topics_covered: ["what_is_via", "what_to_expect"],
+  breathing_exercises: 1,
+  summary: "Grace was nervous about pain and calmer after breathing.",
+  patient_id: null,
+  visit_id: null,
+  interpretation_id: null,
+  created_at: "",
+  completed_at: new Date().toISOString(),
+  prefill: {
+    patient_external_id: "INT-K7M3Q",
+    age: 38,
+    hiv_status: "positive",
+    pregnant: false,
+    previously_treated: null,
+    previous_screening_result: null,
+    parity: 3,
+    smoker: false,
+    contraception: null,
+    symptoms: ["postcoital_bleeding"],
+    phone: "+250788111222",
+    result_channel: "whatsapp",
+  },
+  flags: [{ level: "alert", text: "Reports postcoital bleeding." }],
+};
+
+export function mockFetch(overrides: { pharmaciesStatus?: number; interpretError?: string; waiting?: Intake[] } = {}) {
   let referred = false;
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
-    if (url === "/api/v1/interpret") return json(interpretationFixture, 201);
+    if (url === "/api/v1/interpret")
+      return overrides.interpretError ? json({ error: overrides.interpretError }, 502) : json(interpretationFixture, 201);
+    if (url.startsWith("/api/v1/intake?")) return json(overrides.waiting ?? []);
+    if (url === `/api/v1/intake/${intakeFixture.id}` || url === `/api/v1/intake/code/${intakeFixture.code}`)
+      return json(intakeFixture);
     if (url.endsWith("/annotations")) return json({ agrees_with_ai: true, review_status: "reviewed" }, 201);
     if (url.endsWith("/care")) return json(careFixture(referred));
     if (url.endsWith("/notifications") && method === "POST") {

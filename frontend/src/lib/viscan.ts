@@ -168,9 +168,10 @@ function postJson<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
-export function interpretImage(file: File, visit: VisitDetails): Promise<Interpretation> {
+export function interpretImage(file: File, visit: VisitDetails, intakeId?: number): Promise<Interpretation> {
   const form = new FormData();
   form.append("image", file);
+  if (intakeId) form.append("intake_id", String(intakeId));
   const fields: Record<string, string> = {
     patient_external_id: visit.patientId.trim(),
     age: visit.age,

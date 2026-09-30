@@ -12,13 +12,17 @@ export function SendResults({
   interpretationId,
   sentBy,
   refreshKey = 0,
+  defaultPhone,
+  defaultChannel,
 }: {
   interpretationId: number;
   sentBy?: string;
   refreshKey?: number;
+  defaultPhone?: string | null;
+  defaultChannel?: Channel | null;
 }) {
-  const [channel, setChannel] = useState<Channel>("sms");
-  const [phone, setPhone] = useState("");
+  const [channel, setChannel] = useState<Channel>(defaultChannel ?? "sms");
+  const [phone, setPhone] = useState(defaultPhone ?? "");
   const [previews, setPreviews] = useState<Record<Channel, string> | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [sending, setSending] = useState(false);

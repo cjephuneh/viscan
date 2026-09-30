@@ -7,10 +7,12 @@ from flask import Blueprint, Response, current_app, jsonify, render_template, re
 
 from .models import (
     DIAGNOSIS_METHODS, DIAGNOSIS_RESULTS, HIV_STATUSES, HPV_STATUSES, SCREENING_VERDICTS, SYMPTOMS,
-    TREATMENTS, VIA_RESULTS, AIInterpretation, ClinicianAnnotation, DiagnosisRecord, Notification, Outcome,
-    PartnerHospital, Patient, Referral, ViaImage, db,
+    TREATMENTS, VIA_RESULTS, AIInterpretation, ClinicianAnnotation, DiagnosisRecord, IntakeSession, Notification,
+    Outcome, PartnerHospital, Patient, Referral, ViaImage, db,
 )
+from .services.avatar import AvatarUnavailable, create_session_token, fetch_persona
 from .services.care import compose_message, final_result, suggested_supplies
+from .services.intake import IntakeError, apply_event, create_intake, intake_payload
 from .services.metrics import compute_metrics
 from .services.places import PlacesUnavailable, haversine_km, nearby_pharmacies
 from .services.overlay import render_overlay
@@ -25,6 +27,7 @@ class BadRequest(ValueError):
 
 @api_bp.errorhandler(BadRequest)
 @api_bp.errorhandler(PipelineError)
+@api_bp.errorhandler(IntakeError)
 def _bad_request(exc):
     return jsonify(error=str(exc)), 400
 
@@ -142,6 +145,8 @@ def interpret():
         "site": form.get("site"),
         "device": form.get("device"),
     }
+    intake_id = _int(form.get("intake_id"), "intake_id")
+    intake = _get_or_404(IntakeSession, intake_id) if intake_id else None
     try:
         result = analyze_image(file.read(), fields)
     except PipelineError:
@@ -150,6 +155,12 @@ def interpret():
         db.session.rollback()
         current_app.logger.exception("Interpretation failed")
         return jsonify(error=f"Interpretation failed: {exc}"), 502
+    if intake:
+        intake.interpretation_id = result["interpretation_id"]
+        intake.patient_id = result["patient_id"]
+        intake.visit_id = result["visit_id"]
+        db.session.commit()
+        result["intake_id"] = intake.id
     return jsonify(result), 201
 
 
@@ -447,6 +458,78 @@ def send_notification(interp_id):
     db.session.add(notification)
     db.session.commit()
     return jsonify(notification.to_dict()), 201
+
+
+@api_bp.post("/intake")
+def start_intake():
+    """Start a pre-screening intake (the patient meets the avatar, or fills the form)."""
+    body = request.get_json(silent=True) or {}
+    intake = create_intake(language=body.get("language"), channel=body.get("channel") or "avatar")
+    return jsonify(intake_payload(intake)), 201
+
+
+@api_bp.get("/intake")
+def list_intakes():
+    """Waiting room: recent intakes, newest first."""
+    query = IntakeSession.query
+    status = _choice(request.args.get("status"), ("in_progress", "completed"), "status")
+    if status:
+        query = query.filter_by(status=status)
+    if request.args.get("unscreened") in ("1", "true"):
+        query = query.filter(IntakeSession.interpretation_id.is_(None))
+    limit = _int(request.args.get("limit"), "limit", 1, 200) or 50
+    rows = query.order_by(IntakeSession.created_at.desc()).limit(limit).all()
+    return jsonify([intake_payload(row) for row in rows])
+
+
+@api_bp.get("/intake/<int:intake_id>")
+def get_intake(intake_id):
+    intake = _get_or_404(IntakeSession, intake_id)
+    return jsonify(intake_payload(intake, include_transcript=request.args.get("transcript") in ("1", "true")))
+
+
+@api_bp.get("/intake/code/<code>")
+def get_intake_by_code(code):
+    intake = IntakeSession.query.filter_by(code=code.strip().upper()).first()
+    if intake is None:
+        return jsonify(error=f"No intake with code {code}."), 404
+    return jsonify(intake_payload(intake))
+
+
+@api_bp.get("/avatar/persona")
+def avatar_persona():
+    """Public details of the intake avatar (name, portrait) and whether it can be started."""
+    try:
+        persona = fetch_persona(current_app.config)
+    except AvatarUnavailable as exc:
+        current_app.logger.warning("Avatar unavailable: %s", exc)
+        return jsonify(available=False, name="Mia", image_url=None)
+    return jsonify(available=True, name=persona["name"], image_url=persona["image_url"])
+
+
+@api_bp.post("/intake/<int:intake_id>/avatar-token")
+def intake_avatar_token(intake_id):
+    """Short-lived Anam session token for the avatar; the API key never leaves the server."""
+    intake = _get_or_404(IntakeSession, intake_id)
+    try:
+        token = create_session_token(current_app.config, client_label=f"viscan-intake-{intake.code}")
+    except AvatarUnavailable as exc:
+        current_app.logger.warning("Avatar unavailable: %s", exc)
+        return jsonify(error=str(exc)), 503
+    return jsonify(token)
+
+
+@api_bp.post("/intake/<int:intake_id>/events")
+def intake_event(intake_id):
+    """Record something the avatar learned: {type, data}. Types: details, answer, feeling, concern,
+    question, topic, breathing, finish, transcript."""
+    intake = _get_or_404(IntakeSession, intake_id)
+    body = _json_body()
+    if body.get("anam_session_id"):
+        intake.anam_session_id = str(body["anam_session_id"])[:64]
+    message = apply_event(intake, body.get("type"), body.get("data") or {})
+    db.session.commit()
+    return jsonify(message=message, intake=intake_payload(intake))
 
 
 @api_bp.get("/metrics")

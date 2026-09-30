@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { CheckedInPatients, IntakeSummary } from "@/components/intake-panel";
 import { SendResults } from "@/components/send-results";
+import { type Intake, getIntake } from "@/lib/intake";
 import {
   type Interpretation,
   type ViaResult,
@@ -118,7 +120,24 @@ const TEST_STATUS: [string, string][] = [
   ["positive", "Positive"],
 ];
 
-export function ScreeningScreen() {
+const tri = (value: boolean | null | undefined) => (value === null || value === undefined ? "" : String(value));
+
+function visitFromIntake(intake: Intake, current: VisitDetails): VisitDetails {
+  const p = intake.prefill;
+  return {
+    ...current,
+    patientId: p.patient_external_id,
+    age: p.age?.toString() ?? "",
+    hivStatus: p.hiv_status || "unknown",
+    pregnant: tri(p.pregnant),
+    previouslyTreated: tri(p.previously_treated),
+    smoker: tri(p.smoker),
+    parity: p.parity?.toString() ?? "",
+    symptoms: p.symptoms.filter((s) => SYMPTOMS.some((known) => known.id === s)),
+  };
+}
+
+export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<string | null>(null);
@@ -142,6 +161,30 @@ export function ScreeningScreen() {
   const [notes, setNotes] = useState("");
   const [finalVia, setFinalVia] = useState<ViaResult | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [intake, setIntake] = useState<Intake | null>(null);
+
+  function selectIntake(next: Intake | null) {
+    setIntake(next);
+    setPatientError("");
+    setVisit((current) =>
+      next ? visitFromIntake(next, current) : { ...EMPTY_VISIT, site: current.site, clinicianId: current.clinicianId },
+    );
+  }
+
+  useEffect(() => {
+    if (!intakeId) return;
+    let active = true;
+    getIntake(intakeId)
+      .then((found) => {
+        if (!active) return;
+        setIntake(found);
+        setVisit((current) => visitFromIntake(found, current));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [intakeId]);
 
   const update = <K extends keyof VisitDetails>(key: K, value: VisitDetails[K]) =>
     setVisit((current) => ({ ...current, [key]: value }));
@@ -213,7 +256,7 @@ export function ScreeningScreen() {
 
   function startOver() {
     clearImage();
-    setVisit((current) => ({ ...EMPTY_VISIT, site: current.site, clinicianId: current.clinicianId }));
+    selectIntake(null);
   }
 
   async function runReading() {
@@ -229,7 +272,7 @@ export function ScreeningScreen() {
     setElapsed(0);
     setPhase("reading");
     try {
-      const data = await interpretImage(file, visit);
+      const data = await interpretImage(file, visit, intake?.id);
       setResult(data);
       setPhase("result");
     } catch (err) {
@@ -332,6 +375,8 @@ export function ScreeningScreen() {
           </p>
         </aside>
       </header>
+
+      {intake ? <IntakeSummary intake={intake} onClear={() => selectIntake(null)} /> : <CheckedInPatients onSelect={selectIntake} />}
 
       <section className="session visit" aria-label="Visit details">
         <div className="visit-grid">
@@ -882,7 +927,12 @@ export function ScreeningScreen() {
                     </div>
                   </article>
 
-                  <SendResults interpretationId={result.interpretation_id} sentBy={visit.clinicianId.trim()} />
+                  <SendResults
+                    interpretationId={result.interpretation_id}
+                    sentBy={visit.clinicianId.trim()}
+                    defaultPhone={intake?.prefill.phone}
+                    defaultChannel={intake?.prefill.result_channel === "none" ? null : intake?.prefill.result_channel}
+                  />
                 </>
               )}
             </div>

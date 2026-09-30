@@ -34,14 +34,22 @@ the Flask API, so the browser never needs the backend URL or API key.
 | `VISCAN_API_URL` | `http://127.0.0.1:5050` | Flask API base URL |
 | `VISCAN_API_KEY` | – | Sent as `X-API-Key` when the API requires it |
 
-Pages: `/` (screening: visit details, AI reading, clinician confirmation, send results) and
-`/care/{interpretation_id}` (map of nearby pharmacies from OpenStreetMap, partner hospitals with
+Pages:
+
+- `/` — patient welcome. Mia, an AI avatar ([Anam](https://docs.anam.ai/)), explains VIA
+  screening, calms nervous patients (breathing exercise, concerns noted for the nurse), asks name,
+  age, sex and the health questions, then shows a check-in code. Falls back to a short form if the
+  avatar or microphone is unavailable.
+- `/screening` — clinician workstation: checked-in patients (pre-filled visit details, nurse
+  flags, anxiety change), visit details, AI reading, clinician confirmation, send results.
+  `/screening?intake={id}` opens a specific check-in.
+- `/care/{interpretation_id}` (map of nearby pharmacies from OpenStreetMap, partner hospitals with
 referral, suggested supplies, send results by SMS/WhatsApp — messages are simulated for now).
 
 ## Run with Docker
 
 ```bash
-cp .env.example .env        # add OPENAI_API_KEY (and DB_* for Postgres)
+cp .env.example .env        # add OPENAI_API_KEY, ANAM_API_KEY (and DB_* for Postgres)
 docker compose up --build   # http://localhost:5050
 ```
 

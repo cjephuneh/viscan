@@ -358,3 +358,88 @@ def test_pharmacies_from_openstreetmap(client, monkeypatch):
 def test_invalid_symptom_rejected(client):
     res = upload(client, cervix_image(False), symptoms="headache")
     assert res.status_code == 400
+
+
+def _event(client, intake_id, kind, **data):
+    res = client.post(f"/api/v1/intake/{intake_id}/events", json={"type": kind, "data": data})
+    assert res.status_code == 200, res.json
+    return res.json
+
+
+def test_avatar_intake_flow_prefills_screening(client):
+    intake = client.post("/api/v1/intake", json={"language": "en"}).json
+    iid, code = intake["id"], intake["code"]
+    assert intake["status"] == "in_progress" and len(code) == 5
+
+    _event(client, iid, "details", full_name="Grace Uwase", preferred_name="Grace", age="38 years", sex="Female")
+    _event(client, iid, "feeling", level=5, note="very scared")
+    _event(client, iid, "topic", topic="what_to_expect")
+    _event(client, iid, "breathing", rounds=3)
+    _event(client, iid, "concern", concern="Worried it will hurt", category="pain")
+    _event(client, iid, "question", question="Can my sister come in?", answered=False)
+    for question, value in [("previous_screening", "negative"), ("pregnant", "no"), ("menstruating_now", "yes"),
+                            ("symptoms", "postcoital_bleeding, headache"), ("hiv_status", "positive"),
+                            ("parity", "3 children"), ("smoker", "no"), ("phone", "+250 788 111 222"),
+                            ("result_channel", "whatsapp"), ("consent", "yes")]:
+        _event(client, iid, "answer", question=question, value=value, said=value)
+    _event(client, iid, "feeling", level=2)
+    done = _event(client, iid, "finish", summary="Grace was nervous about pain; calmer after breathing.")
+    assert code in done["message"]
+    _event(client, iid, "transcript", messages=[{"role": "persona", "content": "Hi"}, {"role": "user", "content": "Hello"}])
+
+    data = client.get(f"/api/v1/intake/{iid}?transcript=1").json
+    assert data["status"] == "completed" and data["age"] == 38 and data["sex"] == "female"
+    assert data["anxiety"] == {"start": 5, "end": 2, "change": -3}
+    assert data["breathing_exercises"] == 1 and data["topics_covered"] == ["what_to_expect"]
+    assert len(data["transcript"]) == 2
+    prefill = data["prefill"]
+    assert prefill["patient_external_id"] == f"INT-{code}"
+    assert prefill["hiv_status"] == "positive" and prefill["pregnant"] is False and prefill["parity"] == 3
+    assert prefill["symptoms"] == ["postcoital_bleeding"] and prefill["previous_screening_result"] == "VIA_NEGATIVE"
+    assert prefill["phone"] == "+250788111222" and prefill["result_channel"] == "whatsapp"
+    flags = " ".join(f["text"] for f in data["flags"])
+    assert "postcoital bleeding" in flags and "menstruating" in flags and "Can my sister come in?" in flags
+    assert client.get(f"/api/v1/intake/code/{code.lower()}").json["id"] == iid
+
+    res = upload(client, cervix_image(True), patient_external_id=prefill["patient_external_id"], intake_id=str(iid))
+    assert res.status_code == 201 and res.json["intake_id"] == iid
+    linked = client.get(f"/api/v1/intake/{iid}").json
+    assert linked["interpretation_id"] == res.json["interpretation_id"]
+    assert client.get("/api/v1/intake?unscreened=1").json == []
+
+
+def test_intake_rejects_bad_events(client):
+    iid = client.post("/api/v1/intake").json["id"]
+    assert client.post(f"/api/v1/intake/{iid}/events", json={"type": "dance"}).status_code == 400
+    assert client.post(f"/api/v1/intake/{iid}/events",
+                       json={"type": "answer", "data": {"question": "favourite_colour", "value": "red"}}).status_code == 400
+    assert client.post(f"/api/v1/intake/{iid}/events", json={"type": "feeling", "data": {"level": "calm"}}).status_code == 400
+
+
+def test_avatar_token_uses_persona_with_intake_tools(client, monkeypatch):
+    from app.services import avatar
+
+    calls = []
+
+    def fake_call(cfg, method, path, body=None, timeout=20):
+        calls.append((method, path, body))
+        if path.startswith("/personas/"):
+            return {"id": "p1", "name": "Mia", "avatarModel": "cara-4", "llmId": "llm-1",
+                    "avatar": {"id": "av-1", "imageUrl": "https://img"}, "voice": {"id": "vo-1"}}
+        return {"sessionToken": "tok-123"}
+
+    avatar._persona_cache.clear()
+    monkeypatch.setattr(avatar, "_call", fake_call)
+    client.application.config.update(ANAM_API_KEY="k", ANAM_PERSONA_ID="p1", ANAM_LLM_ID="")
+    iid = client.post("/api/v1/intake").json["id"]
+    res = client.post(f"/api/v1/intake/{iid}/avatar-token")
+    assert res.status_code == 200 and res.json["session_token"] == "tok-123"
+    config = calls[-1][2]["personaConfig"]
+    assert config["avatarId"] == "av-1" and config["voiceId"] == "vo-1" and config["llmId"] == "llm-1"
+    assert {t["name"] for t in config["tools"]} >= {"save_patient_details", "save_answer", "finish_intake"}
+    assert all(t["type"] == "client" for t in config["tools"])
+
+    client.application.config.update(ANAM_API_KEY="")
+    avatar._persona_cache.clear()
+    monkeypatch.undo()
+    assert client.post(f"/api/v1/intake/{iid}/avatar-token").status_code == 503
