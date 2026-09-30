@@ -44,6 +44,9 @@ class CervicalAvatarReport(Base):
     anam_session_token = Column(Text, nullable=True)
     anam_session_id = Column(String(100), nullable=True)
     anam_video_stream_url = Column(Text, nullable=True)
+    anam_video_id = Column(String(100), nullable=True)
+    anam_video_url = Column(Text, nullable=True)
+    video_status = Column(String(50), default="pending", nullable=True)
 
     status = Column(
         String(20),
@@ -80,6 +83,9 @@ class CervicalAvatarReport(Base):
             "anam_session_token": self.anam_session_token,
             "anam_session_id": self.anam_session_id,
             "anam_video_stream_url": self.anam_video_stream_url,
+            "anam_video_id": self.anam_video_id,
+            "anam_video_url": self.anam_video_url,
+            "video_status": self.video_status,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

@@ -113,6 +113,84 @@ class AnamService:
                 logger.error(f"Error fetching personas from Anam: {e}")
                 return {"personas": [], "error": str(e)}
 
+    async def create_avatar_video(
+        self,
+        script: str,
+        avatar_id: Optional[str] = None,
+        voice_id: Optional[str] = None,
+        persona_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Triggers asynchronous MP4 avatar video rendering from a script (POST /v1/avatar-videos).
+        Requires Idempotency-Key header.
+        """
+        import uuid
+
+        if not self.is_configured:
+            return {
+                "id": f"simulated_video_{uuid.uuid4().hex[:8]}",
+                "status": "completed",
+                "content": {
+                    "available": True,
+                    "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                },
+                "simulated": True,
+            }
+
+        url = f"{self.base_url}/avatar-videos"
+        headers = self._get_headers()
+        headers["Idempotency-Key"] = str(uuid.uuid4())
+
+        eff_avatar_id = avatar_id or settings.ANAM_DEFAULT_AVATAR_ID or "54f78dd3-bd52-4077-899d-322fcb56d4cd"
+        eff_voice_id = voice_id or settings.ANAM_DEFAULT_VOICE_ID or "91b4ce0f-4fc0-11f1-84b0-52bacf74fa75"
+
+        payload: Dict[str, Any] = {
+            "script": script,
+            "avatarId": eff_avatar_id,
+            "voiceId": eff_voice_id,
+        }
+
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            try:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                logger.info(f"Initiated Anam avatar video render job: {data.get('id')}")
+                return data
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Anam avatar-video generation error ({e.response.status_code}): {e.response.text}")
+                raise RuntimeError(f"Anam video render error: {e.response.text}") from e
+            except Exception as e:
+                logger.error(f"Failed to call Anam avatar-video API: {e}")
+                raise RuntimeError(f"Anam video render connection failure: {e}") from e
+
+    async def get_avatar_video(self, video_id: str) -> Dict[str, Any]:
+        """
+        Retrieves current status and downloadable/playable MP4 URL of an avatar video job.
+        """
+        if not self.is_configured or video_id.startswith("simulated_"):
+            return {
+                "id": video_id,
+                "status": "completed",
+                "content": {
+                    "available": True,
+                    "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                },
+            }
+
+        url = f"{self.base_url}/avatar-videos/{video_id}"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.get(url, headers=self._get_headers())
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Failed to query avatar video {video_id}: {e.response.text}")
+                raise RuntimeError(f"Failed to query video status: {e.response.text}") from e
+            except Exception as e:
+                logger.error(f"Error querying video status: {e}")
+                raise RuntimeError(f"Failed to check video status: {e}") from e
+
 
 # Singleton instance
 anam_service = AnamService()

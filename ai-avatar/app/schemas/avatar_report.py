@@ -82,12 +82,28 @@ class ReportResponse(BaseModel):
     generated_script: str
     anam_persona_id: Optional[str]
     anam_session_token: Optional[str]
+    anam_video_id: Optional[str] = None
+    anam_video_url: Optional[str] = None
+    video_status: Optional[str] = None
+    player_url: Optional[str] = None
     status: str
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True
+
+
+class VideoStatusResponse(BaseModel):
+    report_id: str
+    scan_id: str
+    video_id: Optional[str]
+    status: str = Field(..., description="Video rendering status: 'pending', 'running', 'completed', 'failed'")
+    video_url: Optional[str] = Field(None, description="Direct playable MP4 video URL (usable in <video src=...>)")
+    player_url: Optional[str] = Field(None, description="Ready-to-use HTML player page URL for iframes / previews")
+    duration_seconds: Optional[float] = None
+    expires_at: Optional[str] = None
+    instructions: str = "Use video_url directly in HTML5 <video src=...> or player_url in an <iframe>."
 
 
 class AnamSessionTokenRequest(BaseModel):
