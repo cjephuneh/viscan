@@ -32,6 +32,11 @@ recommendation. Every result is stored and must be confirmed by a clinician.
    - [Patient record](#get-patientsid)
    - [Metrics](#get-metrics)
    - [Dataset export](#get-datasetexport)
+   - [Care summary](#get-interpretationsidcare)
+   - [Nearby pharmacies](#get-placespharmacies)
+   - [Partner hospitals](#get-partner-hospitals)
+   - [Refer to a partner hospital](#post-interpretationsidreferrals)
+   - [Send results by SMS / WhatsApp](#post-interpretationsidnotifications)
 5. [How a result is produced](#how-a-result-is-produced)
 6. [Data model](#data-model)
 7. [Configuration](#configuration)
@@ -475,6 +480,105 @@ model fine-tuning.
 
 ---
 
+### `GET /interpretations/{id}/care`
+
+What happens after the screen. The latest clinician annotation overrides the AI result.
+
+```json
+{
+  "interpretation_id": 2,
+  "patient_external_id": "E2E-042",
+  "final_via_result": "VIA_POSITIVE",
+  "result_source": "clinician",
+  "screening_verdict": "SUSPICIOUS",
+  "is_suspicious": true,
+  "needs_referral": false,
+  "urgency": "soon",
+  "action": "VIA positive and eligible for ablation: offer same-visit thermal ablation ...",
+  "suggested_supplies": [
+    {"item": "Sanitary pads", "why": "Watery discharge or light bleeding for up to 4 weeks after treatment", "prescription": false}
+  ],
+  "referrals": [],
+  "notifications": [],
+  "message_preview": {"sms": "Hello, this is your clinic (VIScan). ...", "whatsapp": "Hello, ... Reply or call the clinic with any questions."}
+}
+```
+
+`needs_referral` is true when cancer is suspected or the lesion is not eligible for ablation.
+`suggested_supplies` is empty unless the result is VIA positive or suspicious for cancer.
+
+---
+
+### `GET /places/pharmacies`
+
+Pharmacies near a location, from OpenStreetMap (Overpass API; no key needed, results cached for
+10 minutes, mirrors tried in order).
+
+| Query | Default | Notes |
+|---|---|---|
+| `lat`, `lng` | `DEFAULT_LATITUDE`, `DEFAULT_LONGITUDE` | Search centre |
+| `radius` | `3000` | Metres, 200 to 20000 |
+
+```json
+{
+  "source": "openstreetmap",
+  "center": {"lat": -1.9441, "lng": 30.0619},
+  "radius_m": 2000,
+  "results": [
+    {"id": "node/123", "name": "Miracle Pharmacy", "latitude": -1.945, "longitude": 30.061,
+     "distance_km": 0.14, "address": null, "phone": "+250 788 890 078", "opening_hours": null,
+     "osm_url": "https://www.openstreetmap.org/node/123"}
+  ]
+}
+```
+
+Returns `503` with `results: []` when every Overpass mirror is unavailable.
+
+---
+
+### `GET /partner-hospitals`
+
+Partner hospitals that accept referrals, nearest first. Optional `lat`, `lng` (distance origin)
+and `service` (for example `colposcopy`). Four demo partners (`is_demo: true`) are seeded around
+the default location on first start when `SEED_DEMO_PARTNERS` is on; replace them with real
+partners.
+
+### `POST /partner-hospitals`
+
+```json
+{"name": "Kigali Women's Clinic", "latitude": -1.95, "longitude": 30.06,
+ "address": "KN 3 Rd", "city": "Kigali", "phone": "+250 700 000 000", "whatsapp": "+250 700 000 000",
+ "services": ["colposcopy", "LEEP"], "opening_hours": "Mon-Fri 08:00-17:00"}
+```
+
+`name`, `latitude` and `longitude` are required. Returns `201` with the hospital.
+
+---
+
+### `POST /interpretations/{id}/referrals`
+
+```json
+{"hospital_id": 1, "referred_by": "nurse-07", "urgency": "soon", "reason": "optional"}
+```
+
+`urgency` (`routine`/`soon`/`urgent`) and `reason` default to the recommendation. Returns `201`
+with the referral (`status: "sent"`). Later patient messages mention the referral hospital.
+
+---
+
+### `POST /interpretations/{id}/notifications`
+
+Send the patient their result. **Currently a dummy provider:** the message is stored with
+`status: "simulated"` and `provider: "dummy"`; nothing is sent.
+
+```json
+{"channel": "whatsapp", "phone": "+250788000111", "message": "optional, defaults to the preview", "sent_by": "nurse-07"}
+```
+
+`channel` is `sms` or `whatsapp`; `phone` needs at least 7 digits. Returns `201`.
+
+---
+
 ## How a result is produced
 
 1. **Validation & storage** — image type/size checked, SHA-256 computed, file stored.
@@ -510,6 +614,9 @@ confidence (demo/testing only).
 | `clinician_annotation` | Clinician VIA read (ground truth) |
 | `diagnosis_record` | Colposcopy / histology / HPV / cytology results |
 | `outcome` | Treatment and follow-up |
+| `partner_hospital` | Referral destinations with location and services |
+| `referral` | Referral of a screen to a partner hospital |
+| `notification` | Result messages sent to patients (SMS / WhatsApp; currently simulated) |
 
 Tables are created automatically on startup.
 
@@ -529,3 +636,6 @@ Tables are created automatically on startup.
 | `SQLITE_PATH` | `instance/viscan.db` | SQLite file used when no Postgres is configured |
 | `UPLOAD_DIR` | `instance/uploads` | Image storage directory |
 | `PORT` | `5050` | HTTP port |
+| `DEFAULT_LATITUDE`, `DEFAULT_LONGITUDE` | `-1.9441`, `30.0619` | Default map centre (clinic location) |
+| `OVERPASS_URLS` | public mirrors | Comma-separated Overpass endpoints for the pharmacy search |
+| `SEED_DEMO_PARTNERS` | on | Seed demo partner hospitals when the table is empty |

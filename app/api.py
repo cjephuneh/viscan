@@ -7,10 +7,12 @@ from flask import Blueprint, Response, current_app, jsonify, render_template, re
 
 from .models import (
     DIAGNOSIS_METHODS, DIAGNOSIS_RESULTS, HIV_STATUSES, HPV_STATUSES, SCREENING_VERDICTS, SYMPTOMS,
-    TREATMENTS, VIA_RESULTS, AIInterpretation, ClinicianAnnotation, DiagnosisRecord, Outcome, Patient,
-    ViaImage, db,
+    TREATMENTS, VIA_RESULTS, AIInterpretation, ClinicianAnnotation, DiagnosisRecord, Notification, Outcome,
+    PartnerHospital, Patient, Referral, ViaImage, db,
 )
+from .services.care import compose_message, final_result, suggested_supplies
 from .services.metrics import compute_metrics
+from .services.places import PlacesUnavailable, haversine_km, nearby_pharmacies
 from .services.overlay import render_overlay
 from .services.pipeline import PipelineError, analyze_image, build_response
 
@@ -306,6 +308,145 @@ def get_patient(patient_id):
             "outcomes": [o.to_dict() for o in patient.outcomes],
         }
     )
+
+
+def _coords():
+    cfg = current_app.config
+    try:
+        lat = float(request.args.get("lat", cfg["DEFAULT_LATITUDE"]))
+        lng = float(request.args.get("lng", cfg["DEFAULT_LONGITUDE"]))
+    except ValueError:
+        raise BadRequest("'lat' and 'lng' must be numbers.") from None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise BadRequest("'lat'/'lng' out of range.")
+    return lat, lng
+
+
+@api_bp.get("/places/pharmacies")
+def pharmacies():
+    """Pharmacies near a location, from OpenStreetMap."""
+    lat, lng = _coords()
+    radius = _int(request.args.get("radius"), "radius", 200, 20000) or 3000
+    try:
+        places = nearby_pharmacies(lat, lng, radius, current_app.config["OVERPASS_URLS"])
+    except PlacesUnavailable as exc:
+        return jsonify(error=str(exc), source="openstreetmap", results=[]), 503
+    return jsonify(source="openstreetmap", center={"lat": lat, "lng": lng}, radius_m=radius, results=places)
+
+
+@api_bp.get("/partner-hospitals")
+def list_partner_hospitals():
+    lat, lng = _coords()
+    service = request.args.get("service")
+    rows = []
+    for hospital in PartnerHospital.query.filter_by(accepts_referrals=True).all():
+        if service and service not in (hospital.services or []):
+            continue
+        rows.append(hospital.to_dict(haversine_km(lat, lng, hospital.latitude, hospital.longitude)))
+    rows.sort(key=lambda h: h["distance_km"])
+    return jsonify(center={"lat": lat, "lng": lng}, results=rows)
+
+
+@api_bp.post("/partner-hospitals")
+def create_partner_hospital():
+    body = _json_body()
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise BadRequest("'name' is required.")
+    try:
+        lat, lng = float(body["latitude"]), float(body["longitude"])
+    except (KeyError, TypeError, ValueError):
+        raise BadRequest("'latitude' and 'longitude' are required numbers.") from None
+    services = body.get("services") or []
+    if not isinstance(services, list):
+        raise BadRequest("'services' must be a list of strings.")
+    hospital = PartnerHospital(
+        name=name, address=body.get("address"), city=body.get("city"), phone=body.get("phone"),
+        whatsapp=body.get("whatsapp"), latitude=lat, longitude=lng, services=services,
+        opening_hours=body.get("opening_hours"), accepts_referrals=body.get("accepts_referrals", True),
+        is_demo=False,
+    )
+    db.session.add(hospital)
+    db.session.commit()
+    return jsonify(hospital.to_dict()), 201
+
+
+@api_bp.get("/interpretations/<int:interp_id>/care")
+def care_summary(interp_id):
+    """What happens after this screen: referral need, suggested supplies, referrals and messages so far."""
+    interp = _get_or_404(AIInterpretation, interp_id)
+    via_result, source = final_result(interp)
+    rec = interp.recommendation or {}
+    patient = interp.image.patient
+    return jsonify(
+        interpretation_id=interp.id,
+        patient_external_id=patient.external_id if patient else None,
+        final_via_result=via_result,
+        result_source=source,
+        screening_verdict=interp.screening_verdict,
+        is_suspicious=via_result in ("VIA_POSITIVE", "SUSPICIOUS_FOR_CANCER"),
+        needs_referral=via_result == "SUSPICIOUS_FOR_CANCER" or rec.get("ablation_eligible") is False,
+        urgency=rec.get("urgency"),
+        action=rec.get("action"),
+        suggested_supplies=suggested_supplies(via_result, rec, interp.findings or {}),
+        referrals=[r.to_dict() for r in Referral.query.filter_by(interpretation_id=interp.id).order_by(Referral.created_at)],
+        notifications=[n.to_dict() for n in Notification.query.filter_by(interpretation_id=interp.id).order_by(Notification.created_at)],
+        message_preview={ch: compose_message(interp, ch, _latest_referral_hospital(interp.id)) for ch in ("sms", "whatsapp")},
+    )
+
+
+def _latest_referral_hospital(interp_id):
+    referral = Referral.query.filter_by(interpretation_id=interp_id).order_by(Referral.created_at.desc()).first()
+    return referral.hospital if referral else None
+
+
+@api_bp.post("/interpretations/<int:interp_id>/referrals")
+def create_referral(interp_id):
+    interp = _get_or_404(AIInterpretation, interp_id)
+    body = _json_body()
+    hospital_id = _int(body.get("hospital_id"), "hospital_id")
+    if hospital_id is None:
+        raise BadRequest("'hospital_id' is required.")
+    hospital = _get_or_404(PartnerHospital, hospital_id)
+    referral = Referral(
+        interpretation_id=interp.id,
+        patient_id=interp.image.patient_id,
+        hospital_id=hospital.id,
+        reason=body.get("reason") or (interp.recommendation or {}).get("action"),
+        urgency=_choice(body.get("urgency"), ("routine", "soon", "urgent"), "urgency")
+        or (interp.recommendation or {}).get("urgency"),
+        referred_by=body.get("referred_by"),
+        status="sent",
+    )
+    db.session.add(referral)
+    db.session.commit()
+    return jsonify(referral.to_dict()), 201
+
+
+@api_bp.post("/interpretations/<int:interp_id>/notifications")
+def send_notification(interp_id):
+    """Send the patient their result by SMS or WhatsApp. Currently a dummy provider: stored, not sent."""
+    interp = _get_or_404(AIInterpretation, interp_id)
+    body = _json_body()
+    channel = _choice(body.get("channel"), ("sms", "whatsapp"), "channel", required=True)
+    recipient = "".join(ch for ch in str(body.get("phone") or "") if ch.isdigit() or ch == "+")
+    if len(recipient.lstrip("+")) < 7:
+        raise BadRequest("'phone' must be a valid phone number.")
+    message = (body.get("message") or "").strip() or compose_message(
+        interp, channel, _latest_referral_hospital(interp.id))
+    notification = Notification(
+        interpretation_id=interp.id,
+        patient_id=interp.image.patient_id,
+        channel=channel,
+        recipient=recipient,
+        message=message[:1000],
+        status="simulated",
+        provider="dummy",
+        sent_by=body.get("sent_by"),
+    )
+    db.session.add(notification)
+    db.session.commit()
+    return jsonify(notification.to_dict()), 201
 
 
 @api_bp.get("/metrics")

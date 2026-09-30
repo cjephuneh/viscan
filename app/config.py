@@ -40,3 +40,11 @@ class Config:
     REVIEW_CONFIDENCE_THRESHOLD = float(os.getenv("REVIEW_CONFIDENCE_THRESHOLD", "0.75"))
 
     API_KEY = os.getenv("VISCAN_API_KEY", "")
+
+    DEFAULT_LATITUDE = float(os.getenv("DEFAULT_LATITUDE", "-1.9441"))
+    DEFAULT_LONGITUDE = float(os.getenv("DEFAULT_LONGITUDE", "30.0619"))
+    OVERPASS_URLS = os.getenv(
+        "OVERPASS_URLS",
+        "https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter",
+    ).split(",")
+    SEED_DEMO_PARTNERS = os.getenv("SEED_DEMO_PARTNERS", "1") == "1"

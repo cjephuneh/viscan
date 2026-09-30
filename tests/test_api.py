@@ -295,6 +295,66 @@ def test_worklist_orders_by_suspicion_and_review_clears_it(openai_client, monkey
     assert metrics["by_review_status"] == {"pending": 1, "disputed": 1}
 
 
+def test_care_flow_partners_referral_notifications(openai_client, monkeypatch):
+    install_fake_openai(monkeypatch, openai_result(tz="type_3", swede={"acetowhiteness": 2, "margins_surface": 2,
+                                                                       "vessels": 1, "lesion_size": 2}))
+    res = upload(openai_client, cervix_image(True), patient_external_id="C1").json
+    interp_id = res["interpretation_id"]
+
+    partners = openai_client.get("/api/v1/partner-hospitals?lat=-1.9441&lng=30.0619").json["results"]
+    assert len(partners) == 4 and all(p["is_demo"] for p in partners)
+    assert [p["distance_km"] for p in partners] == sorted(p["distance_km"] for p in partners)
+
+    care = openai_client.get(f"/api/v1/interpretations/{interp_id}/care").json
+    assert care["is_suspicious"] is True and care["needs_referral"] is True
+    assert any("Pain relief" in s["item"] for s in care["suggested_supplies"])
+
+    ref = openai_client.post(f"/api/v1/interpretations/{interp_id}/referrals",
+                             json={"hospital_id": partners[0]["id"], "referred_by": "nurse-01"})
+    assert ref.status_code == 201 and ref.json["hospital"]["name"] == partners[0]["name"]
+
+    note = openai_client.post(f"/api/v1/interpretations/{interp_id}/notifications",
+                              json={"channel": "whatsapp", "phone": "+250 788 123 456"})
+    assert note.status_code == 201
+    assert note.json["status"] == "simulated" and note.json["recipient"] == "+250788123456"
+    assert partners[0]["name"] in note.json["message"] and "C1" in note.json["message"]
+
+    care = openai_client.get(f"/api/v1/interpretations/{interp_id}/care").json
+    assert len(care["referrals"]) == 1 and len(care["notifications"]) == 1
+
+    bad = openai_client.post(f"/api/v1/interpretations/{interp_id}/notifications", json={"channel": "fax", "phone": "123"})
+    assert bad.status_code == 400
+
+    created = openai_client.post("/api/v1/partner-hospitals",
+                                 json={"name": "Real Partner", "latitude": -1.95, "longitude": 30.06, "services": ["LEEP"]})
+    assert created.status_code == 201 and created.json["is_demo"] is False
+    only_leep = openai_client.get("/api/v1/partner-hospitals?service=LEEP").json["results"]
+    assert "Real Partner" in [p["name"] for p in only_leep]
+
+
+def test_pharmacies_from_openstreetmap(client, monkeypatch):
+    from app.services import places
+
+    places._CACHE.clear()
+    monkeypatch.setattr(places, "_query", lambda urls, q: {"elements": [
+        {"type": "node", "id": 1, "lat": -1.95, "lon": 30.07, "tags": {"name": "Far Pharmacy"}},
+        {"type": "way", "id": 2, "center": {"lat": -1.9442, "lon": 30.0620},
+         "tags": {"name": "Near Pharmacy", "opening_hours": "24/7", "phone": "+250 700"}},
+    ]})
+    res = client.get("/api/v1/places/pharmacies?lat=-1.9441&lng=30.0619&radius=2000")
+    assert res.status_code == 200
+    names = [p["name"] for p in res.json["results"]]
+    assert names == ["Near Pharmacy", "Far Pharmacy"]
+    assert res.json["results"][0]["osm_url"].endswith("/way/2")
+
+    def boom(urls, q):
+        raise places.PlacesUnavailable("down")
+
+    places._CACHE.clear()
+    monkeypatch.setattr(places, "_query", boom)
+    assert client.get("/api/v1/places/pharmacies?lat=0&lng=0").status_code == 503
+
+
 def test_invalid_symptom_rejected(client):
     res = upload(client, cervix_image(False), symptoms="headache")
     assert res.status_code == 400

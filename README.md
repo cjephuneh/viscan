@@ -26,6 +26,18 @@ npm run dev                 # http://127.0.0.1:3000
 npm test
 ```
 
+The UI calls `/api/v1/*` on its own origin; a Next.js route handler forwards those requests to
+the Flask API, so the browser never needs the backend URL or API key.
+
+| Variable (server-side) | Default | Description |
+|---|---|---|
+| `VISCAN_API_URL` | `http://127.0.0.1:5050` | Flask API base URL |
+| `VISCAN_API_KEY` | – | Sent as `X-API-Key` when the API requires it |
+
+Pages: `/` (screening: visit details, AI reading, clinician confirmation, send results) and
+`/care/{interpretation_id}` (map of nearby pharmacies from OpenStreetMap, partner hospitals with
+referral, suggested supplies, send results by SMS/WhatsApp — messages are simulated for now).
+
 ## Run with Docker
 
 ```bash

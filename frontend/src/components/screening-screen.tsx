@@ -1,63 +1,70 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { SendResults } from "@/components/send-results";
+import {
+  type Interpretation,
+  type ViaResult,
+  type VisitDetails,
+  confirmReading,
+  humanize,
+  interpretImage,
+  verdictLabel,
+  verdictTone,
+  viaToVerdict,
+} from "@/lib/viscan";
 
-type Outcome = "suspicious" | "clear";
-type Phase = "empty" | "reading" | "result" | "confirmed";
-
-type Sample = {
-  label: string;
-  tone: Outcome;
-  summary: string;
-  findings: { label: string; value: string }[];
-  followUp: string;
-  recommendation: string;
-};
-
-const SAMPLES: Record<Outcome, Sample> = {
-  suspicious: {
-    label: "Suspicious",
-    tone: "suspicious",
-    summary:
-      "The sample reading flags acetowhite change that should be reviewed before this visit ends.",
-    findings: [
-      { label: "Acetowhite change", value: "Present in the sample reading" },
-      { label: "Borders", value: "Need a closer look" },
-      { label: "Protocol", value: "VIA checklist attached to this image" },
-    ],
-    followUp:
-      "If you confirm this, the next step is a referral to a partner hospital. The avatar can explain that to the patient, and the result can go out by SMS or WhatsApp.",
-    recommendation: "Refer to a partner hospital if you agree with this reading.",
-  },
-  clear: {
-    label: "Not suspicious",
-    tone: "clear",
-    summary:
-      "The sample reading does not flag a suspicious acetowhite change. Routine follow-up still belongs with you.",
-    findings: [
-      { label: "Acetowhite change", value: "Not flagged in the sample reading" },
-      { label: "Borders", value: "No suspicious border called" },
-      { label: "Protocol", value: "VIA checklist attached to this image" },
-    ],
-    followUp:
-      "If you confirm this, routine follow-up is the recommendation. The avatar can explain the next visit, and the result can go out by SMS or WhatsApp.",
-    recommendation: "Routine follow-up. No referral from this reading.",
-  },
-};
+type Phase = "empty" | "ready" | "reading" | "result" | "confirmed";
 
 const READING_STEPS = [
-  "Image obtained",
-  "Applying the VIA checklist",
-  "Preparing the reading",
+  "Image uploaded",
+  "Checking image quality",
+  "AI reading the VIA image",
+  "Applying WHO screening rules",
 ];
 
 const FLOW_STEPS = ["Image obtained", "Interpretation", "Clinician confirms"];
-
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
+const MAX_BYTES = 10 * 1024 * 1024;
+
+const SYMPTOMS: { id: string; label: string }[] = [
+  { id: "postcoital_bleeding", label: "Bleeding after sex" },
+  { id: "intermenstrual_bleeding", label: "Bleeding between periods" },
+  { id: "postmenopausal_bleeding", label: "Bleeding after menopause" },
+  { id: "abnormal_discharge", label: "Abnormal discharge" },
+  { id: "pelvic_pain", label: "Pelvic pain" },
+  { id: "dyspareunia", label: "Pain during sex" },
+];
+
+const EMPTY_VISIT: VisitDetails = {
+  patientId: "",
+  age: "",
+  hivStatus: "unknown",
+  hpvStatus: "unknown",
+  pregnant: "",
+  previouslyTreated: "",
+  smoker: "",
+  parity: "",
+  symptoms: [],
+  site: "",
+  clinicianId: "",
+};
 
 function formatSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function clockText(positions: number[] | undefined) {
+  if (!positions?.length) return "None";
+  return `${positions.join(", ")} o'clock`;
+}
+
+function otherFinding(via: ViaResult): ViaResult | null {
+  if (via === "VIA_POSITIVE" || via === "SUSPICIOUS_FOR_CANCER") return "VIA_NEGATIVE";
+  if (via === "VIA_NEGATIVE") return "VIA_POSITIVE";
+  return null;
 }
 
 function ViscanMark({ className }: { className?: string }) {
@@ -75,26 +82,69 @@ function ViscanMark({ className }: { className?: string }) {
   );
 }
 
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: [string, string][];
+}) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map(([v, text]) => (
+          <option key={v} value={v}>
+            {text}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+const YES_NO: [string, string][] = [
+  ["", "Unknown"],
+  ["false", "No"],
+  ["true", "Yes"],
+];
+const TEST_STATUS: [string, string][] = [
+  ["unknown", "Unknown / not done"],
+  ["negative", "Negative"],
+  ["positive", "Positive"],
+];
+
 export function ScreeningScreen() {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<string | null>(null);
   const patientRef = useRef<HTMLInputElement>(null);
+  const clinicianRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLElement | null>(null);
+  const dragDepth = useRef(0);
 
-  const [patientId, setPatientId] = useState("");
+  const [visit, setVisit] = useState<VisitDetails>(EMPTY_VISIT);
   const [patientError, setPatientError] = useState("");
-  const [fileName, setFileName] = useState("");
-  const [fileSize, setFileSize] = useState("");
+  const [clinicianError, setClinicianError] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [hot, setHot] = useState(false);
-  const dragDepth = useRef(0);
   const [phase, setPhase] = useState<Phase>("empty");
   const [step, setStep] = useState(0);
-  const [outcome, setOutcome] = useState<Outcome>("suspicious");
+  const [elapsed, setElapsed] = useState(0);
+  const [result, setResult] = useState<Interpretation | null>(null);
+  const [apiError, setApiError] = useState("");
   const [notes, setNotes] = useState("");
-  const [finalOutcome, setFinalOutcome] = useState<Outcome | null>(null);
+  const [finalVia, setFinalVia] = useState<ViaResult | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  const update = <K extends keyof VisitDetails>(key: K, value: VisitDetails[K]) =>
+    setVisit((current) => ({ ...current, [key]: value }));
 
   useEffect(() => {
     previewRef.current = previewUrl;
@@ -108,35 +158,37 @@ export function ScreeningScreen() {
 
   useEffect(() => {
     if (phase !== "reading") return;
-    setStep(0);
     const timers = [
-      window.setTimeout(() => setStep(1), 650),
-      window.setTimeout(() => setStep(2), 1300),
-      window.setTimeout(() => setPhase("result"), 2000),
+      window.setTimeout(() => setStep(1), 800),
+      window.setTimeout(() => setStep(2), 2500),
+      window.setTimeout(() => setStep(3), 25000),
     ];
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [phase, fileName]);
+    const ticker = window.setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.clearInterval(ticker);
+    };
+  }, [phase]);
 
-  function takeFile(file: File | undefined) {
-    if (!file) return;
-    if (!ACCEPTED.includes(file.type)) {
+  function takeFile(next: File | undefined) {
+    if (!next) return;
+    if (!ACCEPTED.includes(next.type)) {
       setError("Use a JPG, PNG, or WEBP image.");
       return;
     }
-    if (file.size > 12 * 1024 * 1024) {
-      setError("That image is larger than 12 MB. Choose a smaller one.");
+    if (next.size > MAX_BYTES) {
+      setError("That image is larger than 10 MB. Choose a smaller one.");
       return;
     }
     setError("");
-    setPatientError("");
+    setApiError("");
     setNotes("");
-    setFinalOutcome(null);
-    setOutcome("suspicious");
+    setFinalVia(null);
+    setResult(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(URL.createObjectURL(file));
-    setFileName(file.name);
-    setFileSize(formatSize(file.size));
-    setPhase("reading");
+    setPreviewUrl(URL.createObjectURL(next));
+    setFile(next);
+    setPhase("ready");
   }
 
   function onDrop(event: React.DragEvent) {
@@ -149,25 +201,66 @@ export function ScreeningScreen() {
   function clearImage() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
-    setFileName("");
-    setFileSize("");
+    setFile(null);
     setPhase("empty");
-    setFinalOutcome(null);
+    setResult(null);
+    setFinalVia(null);
     setNotes("");
     setError("");
+    setApiError("");
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  function confirm(next: Outcome) {
-    if (!patientId.trim()) {
-      setPatientError("Add the patient ID before confirming.");
+  function startOver() {
+    clearImage();
+    setVisit((current) => ({ ...EMPTY_VISIT, site: current.site, clinicianId: current.clinicianId }));
+  }
+
+  async function runReading() {
+    if (!file) return;
+    if (!visit.patientId.trim()) {
+      setPatientError("Add the patient ID before reading the image.");
       patientRef.current?.focus();
       return;
     }
     setPatientError("");
-    setOutcome(next);
-    setFinalOutcome(next);
-    setPhase("confirmed");
+    setApiError("");
+    setStep(0);
+    setElapsed(0);
+    setPhase("reading");
+    try {
+      const data = await interpretImage(file, visit);
+      setResult(data);
+      setPhase("result");
+    } catch (err) {
+      setApiError((err as Error).message);
+      setPhase("ready");
+    }
+  }
+
+  async function confirm(via: ViaResult) {
+    if (!result) return;
+    if (!visit.clinicianId.trim()) {
+      setClinicianError("Add your clinician ID before confirming.");
+      clinicianRef.current?.focus();
+      return;
+    }
+    setClinicianError("");
+    setConfirming(true);
+    setApiError("");
+    try {
+      await confirmReading(result.interpretation_id, {
+        clinician_id: visit.clinicianId.trim(),
+        via_result: via,
+        notes: notes.trim() || undefined,
+      });
+      setFinalVia(via);
+      setPhase("confirmed");
+    } catch (err) {
+      setApiError((err as Error).message);
+    } finally {
+      setConfirming(false);
+    }
   }
 
   function focusUpload() {
@@ -175,19 +268,30 @@ export function ScreeningScreen() {
     inputRef.current?.focus();
   }
 
-  const sample = SAMPLES[finalOutcome ?? outcome];
   const imageReady = Boolean(previewUrl);
+  const shownVerdict = finalVia ? viaToVerdict(finalVia) : result?.verdict.screening_verdict;
+  const tone = verdictTone(shownVerdict);
+  const other = result ? otherFinding(result.verdict.via_result) : null;
+  const finalSuspicious = finalVia === "VIA_POSITIVE" || finalVia === "SUSPICIOUS_FOR_CANCER";
+
   const stepState = (index: number) => {
     if (index === 0) return imageReady ? "done" : "active";
     if (index === 1)
-      return phase === "reading"
-        ? "active"
-        : phase === "result" || phase === "confirmed"
-          ? "done"
-          : "";
+      return phase === "reading" ? "active" : phase === "result" || phase === "confirmed" ? "done" : "";
     if (index === 2) return phase === "confirmed" ? "done" : phase === "result" ? "active" : "";
     return "";
   };
+
+  const panelStatus =
+    phase === "confirmed"
+      ? "Confirmed"
+      : phase === "reading"
+        ? "Reading in progress"
+        : phase === "result"
+          ? "Awaiting your confirmation"
+          : phase === "ready"
+            ? "Ready to read"
+            : "Waiting for an image";
 
   return (
     <div className="page">
@@ -210,7 +314,7 @@ export function ScreeningScreen() {
             <button type="button" className="choose" onClick={focusUpload}>
               Start with an image
             </button>
-            <p className="hero-note">Preview workstation · clinician confirms every result</p>
+            <p className="hero-note">AI-assisted reading · clinician confirms every result</p>
           </div>
         </div>
 
@@ -224,31 +328,109 @@ export function ScreeningScreen() {
             ))}
           </ol>
           <p className="aside-note">
-            The image and reading stay on this device if the connection drops. Nothing is sent yet.
+            The AI reading is decision support. Nothing is final until you confirm it.
           </p>
         </aside>
       </header>
 
-      <section className="session" aria-label="Visit details">
-        <label className="field patient-field">
-          <span>Patient ID</span>
-          <input
-            ref={patientRef}
-            value={patientId}
-            onChange={(event) => {
-              setPatientId(event.target.value);
-              if (event.target.value.trim()) setPatientError("");
-            }}
-            placeholder="For example, PT-1042"
-            aria-invalid={Boolean(patientError)}
-            aria-describedby={patientError ? "patient-error" : "patient-hint"}
+      <section className="session visit" aria-label="Visit details">
+        <div className="visit-grid">
+          <div className="field patient-field">
+            <label htmlFor="patient-id">
+              <span>Patient ID</span>
+            </label>
+            <input
+              id="patient-id"
+              ref={patientRef}
+              value={visit.patientId}
+              onChange={(event) => {
+                update("patientId", event.target.value);
+                if (event.target.value.trim()) setPatientError("");
+              }}
+              placeholder="For example, PT-1042"
+              aria-invalid={Boolean(patientError)}
+              aria-describedby={patientError ? "patient-error" : "patient-hint"}
+            />
+            {patientError ? (
+              <small id="patient-error">{patientError}</small>
+            ) : (
+              <small id="patient-hint">Required before the reading</small>
+            )}
+          </div>
+          <label className="field">
+            <span>Age</span>
+            <input
+              type="number"
+              min={10}
+              max={100}
+              value={visit.age}
+              onChange={(event) => update("age", event.target.value)}
+              placeholder="Years"
+            />
+          </label>
+          <SelectField label="HIV status" value={visit.hivStatus} onChange={(v) => update("hivStatus", v)} options={TEST_STATUS} />
+          <SelectField label="HPV test" value={visit.hpvStatus} onChange={(v) => update("hpvStatus", v)} options={TEST_STATUS} />
+          <SelectField label="Pregnant" value={visit.pregnant} onChange={(v) => update("pregnant", v)} options={YES_NO} />
+          <SelectField
+            label="Treated before"
+            value={visit.previouslyTreated}
+            onChange={(v) => update("previouslyTreated", v)}
+            options={YES_NO}
           />
-          {patientError ? (
-            <small id="patient-error">{patientError}</small>
-          ) : (
-            <small id="patient-hint">Required before you confirm a reading</small>
-          )}
-        </label>
+          <SelectField label="Smoker" value={visit.smoker} onChange={(v) => update("smoker", v)} options={YES_NO} />
+          <label className="field">
+            <span>Births (parity)</span>
+            <input
+              type="number"
+              min={0}
+              max={25}
+              value={visit.parity}
+              onChange={(event) => update("parity", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>Screening site</span>
+            <input value={visit.site} onChange={(event) => update("site", event.target.value)} placeholder="Clinic name" />
+          </label>
+          <div className="field">
+            <label htmlFor="clinician-id">
+              <span>Clinician ID</span>
+            </label>
+            <input
+              id="clinician-id"
+              ref={clinicianRef}
+              value={visit.clinicianId}
+              onChange={(event) => {
+                update("clinicianId", event.target.value);
+                if (event.target.value.trim()) setClinicianError("");
+              }}
+              placeholder="For example, nurse-07"
+              aria-invalid={Boolean(clinicianError)}
+              aria-describedby={clinicianError ? "clinician-error" : undefined}
+            />
+            {clinicianError ? <small id="clinician-error">{clinicianError}</small> : null}
+          </div>
+        </div>
+        <fieldset className="symptoms">
+          <legend>Symptoms reported</legend>
+          {SYMPTOMS.map((symptom) => (
+            <label key={symptom.id} className="chip">
+              <input
+                type="checkbox"
+                checked={visit.symptoms.includes(symptom.id)}
+                onChange={(event) =>
+                  update(
+                    "symptoms",
+                    event.target.checked
+                      ? [...visit.symptoms, symptom.id]
+                      : visit.symptoms.filter((s) => s !== symptom.id),
+                  )
+                }
+              />
+              <span>{symptom.label}</span>
+            </label>
+          ))}
+        </fieldset>
       </section>
 
       <main className="stage">
@@ -275,14 +457,14 @@ export function ScreeningScreen() {
               <img src={previewUrl} alt="Screening image selected for this visit" />
               <div className="frame-meta">
                 <p>
-                  <strong>{fileName}</strong>
-                  <span>{fileSize}</span>
+                  <strong>{file?.name}</strong>
+                  <span>{file ? formatSize(file.size) : ""}</span>
                 </p>
                 <div className="frame-actions">
-                  <button type="button" onClick={() => inputRef.current?.click()}>
+                  <button type="button" onClick={() => inputRef.current?.click()} disabled={phase === "reading"}>
                     Replace
                   </button>
-                  <button type="button" onClick={clearImage}>
+                  <button type="button" onClick={clearImage} disabled={phase === "reading"}>
                     Remove
                   </button>
                 </div>
@@ -310,14 +492,21 @@ export function ScreeningScreen() {
                 <ViscanMark />
               </div>
               <h3>Place the screening image</h3>
-              <p>Drop the capture from this visit, or choose it from this device.</p>
+              <p>White-light photo about one minute after acetic acid. Drop it here or choose it.</p>
               <button type="button" className="choose" onClick={() => inputRef.current?.click()}>
                 Choose image
               </button>
-              <p className="formats">JPG, PNG, WEBP · up to 12 MB</p>
+              <p className="formats">JPG, PNG, WEBP · up to 10 MB</p>
             </div>
           )}
           {error ? <p className="error">{error}</p> : null}
+
+          {result && (phase === "result" || phase === "confirmed") ? (
+            <figure className="overlay">
+              <img src={result.links.overlay} alt="AI annotated screening image with lesion markers" />
+              <figcaption>AI lesion markers are approximate.</figcaption>
+            </figure>
+          ) : null}
         </section>
 
         <section className="panel result-panel" aria-labelledby="result-title" aria-live="polite">
@@ -326,25 +515,17 @@ export function ScreeningScreen() {
               <p className="eyebrow">Reading</p>
               <h2 id="result-title">Interpretation</h2>
             </div>
-            <p className="panel-status">
-              {phase === "confirmed"
-                ? "Confirmed"
-                : phase === "reading"
-                  ? "Reading in progress"
-                  : phase === "result"
-                    ? "Awaiting your confirmation"
-                    : "Waiting for an image"}
-            </p>
+            <p className="panel-status">{panelStatus}</p>
           </div>
 
           {phase === "empty" ? (
             <div className="empty-result">
               <div className="reading-slot">
-                <p className="slot-label">Sample reading</p>
+                <p className="slot-label">AI reading</p>
                 <p className="slot-title">The reading will appear here</p>
                 <p className="summary">
-                  After you place a screening image, VISCAN prepares a sample reading for this visit.
-                  You will see whether it is suspicious or not suspicious, then confirm it yourself.
+                  Add the visit details and a screening image. VISCAN reads it and tells you whether it is
+                  suspicious or not suspicious, then you confirm it yourself.
                 </p>
               </div>
               <ul className="outcome-preview" aria-label="Possible readings">
@@ -352,7 +533,7 @@ export function ScreeningScreen() {
                   <span className="outcome-swatch" aria-hidden="true" />
                   <div>
                     <strong>Suspicious</strong>
-                    <span>Referral path if you agree</span>
+                    <span>Referral and pharmacy options if you agree</span>
                   </div>
                 </li>
                 <li className="outcome-preview-item clear">
@@ -367,14 +548,31 @@ export function ScreeningScreen() {
             </div>
           ) : null}
 
+          {phase === "ready" ? (
+            <div className="empty-result">
+              <div className="reading-slot active">
+                <p className="slot-label">AI reading</p>
+                <p className="slot-title">Ready to read this image</p>
+                <p className="summary">
+                  Check the visit details, then start the reading. It usually takes 30 to 60 seconds.
+                </p>
+              </div>
+              {apiError ? <p className="error">{apiError}</p> : null}
+              <div className="actions">
+                <button type="button" className="primary" onClick={runReading}>
+                  Read this image
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {phase === "reading" ? (
             <div className="reading">
               <div className="reading-slot active">
-                <p className="slot-label">Sample reading</p>
+                <p className="slot-label">AI reading</p>
                 <p className="slot-title">Preparing the reading</p>
                 <p className="quiet">
-                  The image is in. VISCAN is applying the VIA checklist so you can review the result
-                  in a moment.
+                  VISCAN is reading the image against the VIA checklist. {elapsed}s elapsed.
                 </p>
               </div>
               <ol className="timeline">
@@ -388,38 +586,41 @@ export function ScreeningScreen() {
             </div>
           ) : null}
 
-          {phase === "result" || phase === "confirmed" ? (
-            <div className={`result ${sample.tone === "clear" ? "is-clear" : "is-alert"}`}>
-              {phase === "result" ? (
-                <div className="sample-switch" role="group" aria-label="Sample outcome preview">
-                  <button
-                    type="button"
-                    className={outcome === "suspicious" ? "on alert" : "alert"}
-                    onClick={() => setOutcome("suspicious")}
-                  >
-                    Suspicious sample
-                  </button>
-                  <button
-                    type="button"
-                    className={outcome === "clear" ? "on clear" : "clear"}
-                    onClick={() => setOutcome("clear")}
-                  >
-                    Not suspicious sample
-                  </button>
-                </div>
-              ) : (
+          {result && (phase === "result" || phase === "confirmed") ? (
+            <div className={`result is-${tone}`}>
+              {phase === "confirmed" ? (
                 <p className="seal">
                   <span className="seal-mark" aria-hidden="true" />
                   Confirmed by clinician
                 </p>
-              )}
+              ) : null}
 
-              <div className={`verdict ${sample.tone === "clear" ? "clear" : "alert"}`}>
+              <div className={`verdict ${tone}`}>
                 <p className="verdict-label">
-                  {phase === "confirmed" ? "Confirmed result" : "Sample reading · preview"}
+                  {phase === "confirmed" ? "Confirmed result" : "AI reading · awaiting your confirmation"}
                 </p>
-                <p className="classification">{sample.label}</p>
-                <p className="summary">{sample.summary}</p>
+                <p className="classification">{verdictLabel(shownVerdict)}</p>
+                <p className="summary">{result.clinical_summary.rationale || result.diagnosis.summary}</p>
+                <ul className="verdict-meta" aria-label="Reading details">
+                  <li>
+                    <span>VIA result</span>
+                    <strong>{humanize(finalVia ?? result.verdict.via_result)}</strong>
+                  </li>
+                  <li>
+                    <span>AI confidence</span>
+                    <strong>{Math.round(result.verdict.confidence * 100)}%</strong>
+                  </li>
+                  <li>
+                    <span>Risk index</span>
+                    <strong>
+                      {result.verdict.risk_score ?? "—"} · {humanize(result.verdict.suspicion_level)}
+                    </strong>
+                  </li>
+                  <li>
+                    <span>Urgency</span>
+                    <strong>{humanize(result.diagnosis.urgency)}</strong>
+                  </li>
+                </ul>
               </div>
 
               <section className="result-block" aria-labelledby="findings-heading">
@@ -427,14 +628,151 @@ export function ScreeningScreen() {
                   Findings
                 </h3>
                 <dl className="findings">
-                  {sample.findings.map((finding) => (
-                    <div key={finding.label}>
-                      <dt>{finding.label}</dt>
-                      <dd>{finding.value}</dd>
-                    </div>
-                  ))}
+                  <div>
+                    <dt>Acetowhite change</dt>
+                    <dd>
+                      {humanize(result.findings?.acetowhite_density)}
+                      {result.findings?.lesion_margins && result.findings?.lesion_margins !== "none"
+                        ? ` · ${humanize(result.findings?.lesion_margins)} margins`
+                        : ""}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Lesion location</dt>
+                    <dd>{clockText(result.findings?.lesion_clock_positions)}</dd>
+                  </div>
+                  <div>
+                    <dt>Cervix involved</dt>
+                    <dd>
+                      {result.findings?.cervix_area_involved_percent ?? 0}%
+                      {result.findings?.extends_into_canal ? " · extends into canal" : ""}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Transformation zone</dt>
+                    <dd>
+                      {humanize(result.image_assessment.transformation_zone_type)} · SCJ{" "}
+                      {humanize(result.image_assessment.scj_visibility).toLowerCase()}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Image type</dt>
+                    <dd>{humanize(result.image_assessment.image_modality)}</dd>
+                  </div>
+                  <div>
+                    <dt>Swede score</dt>
+                    <dd>
+                      {result.swede.total}/{result.swede.max} · {result.swede.interpretation}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Ablation eligible</dt>
+                    <dd>
+                      {result.recommendation.ablation_eligible === null
+                        ? "Not applicable"
+                        : result.recommendation.ablation_eligible
+                          ? "Yes"
+                          : "No"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Follow-up due</dt>
+                    <dd>{result.follow_up_due ?? "—"}</dd>
+                  </div>
                 </dl>
               </section>
+
+              {result.lesions.length ? (
+                <section className="result-block" aria-labelledby="lesions-heading">
+                  <h3 id="lesions-heading" className="block-title">
+                    Lesions ({result.lesions.length})
+                  </h3>
+                  <ol className="lesion-list">
+                    {result.lesions.map((lesion) => (
+                      <li key={lesion.id}>
+                        <strong>
+                          {lesion.clock_start}–{lesion.clock_end} o&apos;clock · {lesion.area_percent}%
+                        </strong>
+                        <span>
+                          {humanize(lesion.density)}, {humanize(lesion.margins).toLowerCase()} margins,{" "}
+                          {humanize(lesion.vessel_pattern).toLowerCase()}
+                          {lesion.touches_scj ? ", touches SCJ" : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              ) : null}
+
+              {result.clinical_summary.key_observations.length ? (
+                <section className="result-block" aria-labelledby="obs-heading">
+                  <h3 id="obs-heading" className="block-title">
+                    Key observations
+                  </h3>
+                  <ul className="bullets">
+                    {result.clinical_summary.key_observations.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {result.histology_likelihood ? (
+                <section className="result-block" aria-labelledby="histo-heading">
+                  <h3 id="histo-heading" className="block-title">
+                    AI-estimated histology likelihood
+                  </h3>
+                  <ul className="bars">
+                    {Object.entries(result.histology_likelihood).map(([key, value]) => (
+                      <li key={key}>
+                        <span>{humanize(key)}</span>
+                        <span className="bar" aria-hidden="true">
+                          <span style={{ width: `${Math.round(value * 100)}%` }} />
+                        </span>
+                        <strong>{Math.round(value * 100)}%</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {result.treatment_eligibility.checklist.length ? (
+                <section className="result-block" aria-labelledby="elig-heading">
+                  <h3 id="elig-heading" className="block-title">
+                    WHO ablation checklist
+                  </h3>
+                  <ul className="checklist">
+                    {result.treatment_eligibility.checklist.map((item) => (
+                      <li key={item.criterion} className={item.met ? "met" : item.met === null ? "unknown" : "unmet"}>
+                        <span aria-hidden="true">{item.met ? "✓" : item.met === null ? "?" : "✕"}</span>
+                        {item.criterion}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {result.recommendation.flags.length || result.image_assessment.adequacy.issues.length ? (
+                <section className="result-block" aria-labelledby="flags-heading">
+                  <h3 id="flags-heading" className="block-title">
+                    Flags
+                  </h3>
+                  <ul className="bullets flags">
+                    {[...new Set([...result.image_assessment.adequacy.issues, ...result.recommendation.flags])].map((flag) => (
+                      <li key={flag}>{flag}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {result.clinical_summary.patient_explanation ? (
+                <section className="result-block" aria-labelledby="explain-heading">
+                  <h3 id="explain-heading" className="block-title">
+                    What to tell the patient
+                  </h3>
+                  <p className="summary">{result.clinical_summary.patient_explanation}</p>
+                </section>
+              ) : null}
 
               {phase === "result" ? (
                 <>
@@ -452,76 +790,108 @@ export function ScreeningScreen() {
                     <h3 id="next-heading" className="block-title">
                       If you confirm
                     </h3>
-                    <p className="next-lead">{sample.recommendation}</p>
-                    <p className="follow">{sample.followUp}</p>
+                    <p className="next-lead">{result.recommendation.action}</p>
+                    {result.verdict.is_suspicious ? (
+                      <p className="follow">
+                        After you confirm, you can refer the patient to a partner hospital, find nearby
+                        pharmacies, and send the result by SMS or WhatsApp.
+                      </p>
+                    ) : (
+                      <p className="follow">
+                        After you confirm, you can send the result to the patient by SMS or WhatsApp.
+                      </p>
+                    )}
                   </aside>
 
+                  {clinicianError ? <p className="error">{clinicianError}</p> : null}
+                  {apiError ? <p className="error">{apiError}</p> : null}
+
                   <div className="actions">
-                    <button type="button" className="primary" onClick={() => confirm(outcome)}>
-                      Confirm this finding
-                    </button>
                     <button
                       type="button"
-                      className="secondary"
-                      onClick={() => confirm(outcome === "suspicious" ? "clear" : "suspicious")}
+                      className="primary"
+                      disabled={confirming}
+                      onClick={() => confirm(result.verdict.via_result)}
                     >
-                      Record the other finding
+                      Confirm this finding
                     </button>
+                    {other ? (
+                      <button type="button" className="secondary" disabled={confirming} onClick={() => confirm(other)}>
+                        Record the other finding
+                      </button>
+                    ) : null}
                     <button type="button" className="ghost" onClick={clearImage}>
                       Retake
                     </button>
                   </div>
                 </>
               ) : (
-                <article className="record">
-                  <div className="record-head">
-                    <h3>Digital record</h3>
-                    <p className="record-note">Saved for this visit after clinician confirmation</p>
-                  </div>
-                  <dl>
-                    <div>
-                      <dt>Patient ID</dt>
-                      <dd>{patientId.trim()}</dd>
+                <>
+                  <article className="record">
+                    <div className="record-head">
+                      <h3>Digital record</h3>
+                      <p className="record-note">Saved for this visit after clinician confirmation</p>
                     </div>
-                    <div>
-                      <dt>Result</dt>
-                      <dd className={`record-result ${sample.tone === "clear" ? "clear" : "alert"}`}>
-                        {SAMPLES[finalOutcome ?? outcome].label}
-                      </dd>
+                    <dl>
+                      <div>
+                        <dt>Patient ID</dt>
+                        <dd>{visit.patientId.trim()}</dd>
+                      </div>
+                      <div>
+                        <dt>Result</dt>
+                        <dd className={`record-result ${tone}`}>{verdictLabel(shownVerdict)}</dd>
+                      </div>
+                      <div>
+                        <dt>Confirmed by</dt>
+                        <dd>{visit.clinicianId.trim()}</dd>
+                      </div>
+                      <div className="record-image-row">
+                        <dt>Image</dt>
+                        <dd>
+                          <div className="record-image">
+                            {previewUrl ? <img src={previewUrl} alt="" /> : null}
+                            <span>{file?.name}</span>
+                          </div>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Clinical notes</dt>
+                        <dd>{notes.trim() || "None added"}</dd>
+                      </div>
+                      <div>
+                        <dt>Follow-up</dt>
+                        <dd>
+                          {finalSuspicious
+                            ? result.recommendation.action
+                            : `Routine follow-up${result.follow_up_due ? ` by ${result.follow_up_due}` : ""}.`}
+                        </dd>
+                      </div>
+                    </dl>
+                    <div className="actions">
+                      {finalSuspicious ? (
+                        <Link className="primary link-button" href={`/care/${result.interpretation_id}`}>
+                          Refer &amp; find pharmacies
+                        </Link>
+                      ) : null}
+                      <a className="secondary link-button" href={result.links.report} target="_blank" rel="noreferrer">
+                        Open printable report
+                      </a>
+                      <button type="button" className="ghost" onClick={startOver}>
+                        Start another screening
+                      </button>
                     </div>
-                    <div className="record-image-row">
-                      <dt>Image</dt>
-                      <dd>
-                        <div className="record-image">
-                          {previewUrl ? (
-                            <img src={previewUrl} alt="" />
-                          ) : null}
-                          <span>{fileName}</span>
-                        </div>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Clinical notes</dt>
-                      <dd>{notes.trim() || "None added"}</dd>
-                    </div>
-                    <div>
-                      <dt>Follow-up</dt>
-                      <dd>{SAMPLES[finalOutcome ?? outcome].recommendation}</dd>
-                    </div>
-                  </dl>
-                  <div className="actions">
-                    <button type="button" className="secondary" onClick={clearImage}>
-                      Start another screening
-                    </button>
-                  </div>
-                </article>
+                  </article>
+
+                  <SendResults interpretationId={result.interpretation_id} sentBy={visit.clinicianId.trim()} />
+                </>
               )}
             </div>
           ) : null}
 
           <p className="footnote">
-            This screen is a preview. The live interpreter is not connected yet, and a result is not
-            final until you confirm it.
+            {result
+              ? `Engine: ${result.engine.model} · ${(result.engine.latency_ms / 1000).toFixed(0)} s. ${result.disclaimer}`
+              : "AI readings are decision support. A result is not final until you confirm it."}
           </p>
         </section>
       </main>

@@ -247,6 +247,95 @@ class ClinicianAnnotation(db.Model):
         }
 
 
+class PartnerHospital(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(160), nullable=False)
+    address = db.Column(db.String(255))
+    city = db.Column(db.String(80))
+    phone = db.Column(db.String(40))
+    whatsapp = db.Column(db.String(40))
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    services = db.Column(db.JSON)
+    opening_hours = db.Column(db.String(120))
+    accepts_referrals = db.Column(db.Boolean, default=True)
+    is_demo = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+
+    def to_dict(self, distance_km: float | None = None):
+        data = {
+            "id": self.id,
+            "name": self.name,
+            "address": self.address,
+            "city": self.city,
+            "phone": self.phone,
+            "whatsapp": self.whatsapp,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "services": self.services or [],
+            "opening_hours": self.opening_hours,
+            "accepts_referrals": self.accepts_referrals,
+            "is_demo": self.is_demo,
+        }
+        if distance_km is not None:
+            data["distance_km"] = round(distance_km, 2)
+        return data
+
+
+class Referral(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    interpretation_id = db.Column(db.Integer, db.ForeignKey("ai_interpretation.id"), nullable=False)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"))
+    hospital_id = db.Column(db.Integer, db.ForeignKey("partner_hospital.id"), nullable=False)
+    reason = db.Column(db.Text)
+    urgency = db.Column(db.String(16))
+    referred_by = db.Column(db.String(64))
+    status = db.Column(db.String(24), default="sent")
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+
+    hospital = db.relationship("PartnerHospital")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "interpretation_id": self.interpretation_id,
+            "patient_id": self.patient_id,
+            "hospital": self.hospital.to_dict() if self.hospital else None,
+            "reason": self.reason,
+            "urgency": self.urgency,
+            "referred_by": self.referred_by,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    interpretation_id = db.Column(db.Integer, db.ForeignKey("ai_interpretation.id"), nullable=False)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"))
+    channel = db.Column(db.String(16), nullable=False)
+    recipient = db.Column(db.String(40), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(24), default="simulated")
+    provider = db.Column(db.String(32), default="dummy")
+    sent_by = db.Column(db.String(64))
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "interpretation_id": self.interpretation_id,
+            "patient_id": self.patient_id,
+            "channel": self.channel,
+            "recipient": self.recipient,
+            "message": self.message,
+            "status": self.status,
+            "provider": self.provider,
+            "sent_by": self.sent_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class DiagnosisRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"), nullable=False)

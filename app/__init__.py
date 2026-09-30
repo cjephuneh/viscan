@@ -25,5 +25,9 @@ def create_app(overrides: dict | None = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        if app.config["SEED_DEMO_PARTNERS"]:
+            from .services.care import seed_demo_partners
+
+            seed_demo_partners(app.config["DEFAULT_LATITUDE"], app.config["DEFAULT_LONGITUDE"])
 
     return app

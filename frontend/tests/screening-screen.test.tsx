@@ -1,19 +1,10 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ScreeningScreen } from "@/components/screening-screen";
+import { interpretationFixture, mockFetch } from "./fixtures";
 
-function makeImageFile(
-  name = "via-capture.png",
-  type: string = "image/png",
-  content = "fake-image-bytes",
-) {
-  return new File([content], name, { type });
-}
-
-function makeOversizedImageFile() {
-  const file = new File(["tiny"], "huge.jpg", { type: "image/jpeg" });
-  Object.defineProperty(file, "size", { value: 12 * 1024 * 1024 + 1 });
-  return file;
+function makeImageFile(name = "via-capture.png", type = "image/png") {
+  return new File(["fake-image-bytes"], name, { type });
 }
 
 function fileInput(container: HTMLElement) {
@@ -26,221 +17,151 @@ function uploadImage(container: HTMLElement, file: File = makeImageFile()) {
   fireEvent.change(fileInput(container), { target: { files: [file] } });
 }
 
-async function advanceToResult() {
-  await act(async () => {
-    vi.advanceTimersByTime(2000);
-  });
-}
+const typeInto = (element: HTMLElement, value: string) => fireEvent.change(element, { target: { value } });
 
-function typeInto(element: HTMLElement, value: string) {
-  fireEvent.change(element, { target: { value } });
-}
+describe("ScreeningScreen", () => {
+  let fetchMock: ReturnType<typeof mockFetch>;
 
-describe("ScreeningScreen — VISCAN clinician dashboard", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    fetchMock = mockFetch();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
-  it("shows the VISCAN brand and VIA cervical screening support on the first screen", () => {
+  it("shows the brand and the visit fields", () => {
     render(<ScreeningScreen />);
-
     expect(screen.getByRole("heading", { name: "VISCAN" })).toBeInTheDocument();
-    expect(screen.getByText(/Supports VIA cervical screening/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Place the screening image from the visit, review a reading/i),
-    ).toBeInTheDocument();
+    for (const label of ["Patient ID", "Age", "HIV status", "HPV test", "Pregnant", "Clinician ID"]) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+    expect(screen.getByRole("group", { name: "Symptoms reported" })).toBeInTheDocument();
   });
 
-  it("does not display a calendar date or weekday date pill", () => {
+  it("rejects unsupported and oversized files", () => {
     const { container } = render(<ScreeningScreen />);
-    const text = container.textContent ?? "";
-
-    expect(text).not.toMatch(
-      /September|October|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/i,
-    );
-    expect(
-      screen.queryByText(/\b\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i),
-    ).not.toBeInTheDocument();
-  });
-
-  it("empty state explains the reading will appear and lists Suspicious and Not suspicious", () => {
-    render(<ScreeningScreen />);
-
-    expect(screen.getByText("The reading will appear here")).toBeInTheDocument();
-    expect(screen.getByText(/Waiting for an image/i)).toBeInTheDocument();
-
-    const possible = screen.getByRole("list", { name: "Possible readings" });
-    expect(within(possible).getByText("Suspicious")).toBeInTheDocument();
-    expect(within(possible).getByText("Not suspicious")).toBeInTheDocument();
-  });
-
-  it("accepts a JPG, PNG, or WEBP image, shows preview and file name, then a sample result", async () => {
-    const { container } = render(<ScreeningScreen />);
-    const file = makeImageFile("cervix-visit.webp", "image/webp");
-
-    uploadImage(container, file);
-
-    expect(screen.getByAltText("Screening image selected for this visit")).toHaveAttribute(
-      "src",
-      "blob:mock-screening-preview",
-    );
-    expect(screen.getByText("cervix-visit.webp")).toBeInTheDocument();
-    expect(screen.getByText("Reading in progress")).toBeInTheDocument();
-    expect(screen.getByText("Sample reading")).toBeInTheDocument();
-    expect(screen.getAllByText("Preparing the reading").length).toBeGreaterThan(0);
-
-    await advanceToResult();
-
-    expect(screen.getByText("Awaiting your confirmation")).toBeInTheDocument();
-    expect(screen.getByText("Sample reading · preview")).toBeInTheDocument();
-    expect(screen.getByText("Suspicious", { selector: ".classification" })).toBeInTheDocument();
-  });
-
-  it("rejects a non-image file with a visible error", () => {
-    const { container } = render(<ScreeningScreen />);
-    const bad = makeImageFile("notes.txt", "text/plain", "not an image");
-
-    uploadImage(container, bad);
-
+    uploadImage(container, makeImageFile("scan.gif", "image/gif"));
     expect(screen.getByText("Use a JPG, PNG, or WEBP image.")).toBeInTheDocument();
-    expect(screen.queryByAltText("Screening image selected for this visit")).not.toBeInTheDocument();
-    expect(screen.getByText("The reading will appear here")).toBeInTheDocument();
+
+    const huge = makeImageFile("huge.jpg", "image/jpeg");
+    Object.defineProperty(huge, "size", { value: 11 * 1024 * 1024 });
+    uploadImage(container, huge);
+    expect(screen.getByText(/larger than 10 MB/)).toBeInTheDocument();
   });
 
-  it("rejects an image larger than 12 MB with a visible error", () => {
-    const { container } = render(<ScreeningScreen />);
-
-    uploadImage(container, makeOversizedImageFile());
-
-    expect(
-      screen.getByText("That image is larger than 12 MB. Choose a smaller one."),
-    ).toBeInTheDocument();
-    expect(screen.queryByAltText("Screening image selected for this visit")).not.toBeInTheDocument();
-  });
-
-  it("sample result shows preview label, findings, clinical notes, and confirm actions", async () => {
+  it("requires a patient ID before reading", () => {
     const { container } = render(<ScreeningScreen />);
     uploadImage(container);
-    await advanceToResult();
-
-    expect(screen.getByText("Sample reading · preview")).toBeInTheDocument();
-    expect(screen.getByText("Suspicious", { selector: ".classification" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Findings" })).toBeInTheDocument();
-    expect(screen.getByText("Acetowhite change")).toBeInTheDocument();
-    expect(screen.getByText("Clinical notes")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm this finding" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Record the other finding" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retake" })).toBeInTheDocument();
-    expect(
-      screen.getByText(/This screen is a preview|live interpreter is not connected/i),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    expect(screen.getByText("Add the patient ID before reading the image.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("lets the clinician switch the sample outcome between Suspicious and Not suspicious", async () => {
+  it("sends the image and visit details, then shows the suspicious reading", async () => {
     const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    typeInto(screen.getByLabelText("Age"), "38");
+    fireEvent.change(screen.getByLabelText("HIV status"), { target: { value: "positive" } });
+    fireEvent.click(screen.getByLabelText("Bleeding after sex"));
     uploadImage(container);
-    await advanceToResult();
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
 
-    expect(screen.getByText("Sample reading · preview")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Suspicious sample" })).toHaveClass("on");
+    expect(await screen.findByText("Suspicious", { selector: ".classification" })).toBeInTheDocument();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/v1/interpret");
+    const form = init!.body as FormData;
+    expect(form.get("patient_external_id")).toBe("PT-1");
+    expect(form.get("age")).toBe("38");
+    expect(form.get("hiv_status")).toBe("positive");
+    expect(form.getAll("symptoms")).toEqual(["postcoital_bleeding"]);
+    expect(form.get("image")).toBeInstanceOf(File);
 
-    fireEvent.click(screen.getByRole("button", { name: "Not suspicious sample" }));
-
-    expect(screen.getByText("Not suspicious", { selector: ".classification" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Not suspicious sample" })).toHaveClass("on");
-    expect(
-      screen.getByText(/does not flag a suspicious acetowhite change/i),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Suspicious sample" }));
-
-    expect(screen.getByRole("button", { name: "Suspicious sample" })).toHaveClass("on");
-    expect(
-      screen.getByText(/flags acetowhite change that should be reviewed/i),
-    ).toBeInTheDocument();
-  });
-
-  it("confirm without a patient ID does not confirm and asks for a patient ID", async () => {
-    const { container } = render(<ScreeningScreen />);
-    uploadImage(container);
-    await advanceToResult();
-
-    fireEvent.click(screen.getByRole("button", { name: "Confirm this finding" }));
-
-    expect(screen.getByText("Add the patient ID before confirming.")).toBeInTheDocument();
-    expect(screen.getByText("Awaiting your confirmation")).toBeInTheDocument();
-    expect(screen.queryByText("Confirmed by clinician")).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Digital record" })).not.toBeInTheDocument();
-  });
-
-  it("confirm with a patient ID shows a digital record and confirmed-by-clinician state", async () => {
-    const { container } = render(<ScreeningScreen />);
-
-    typeInto(screen.getByPlaceholderText("For example, PT-1042"), "PT-1042");
-    uploadImage(container, makeImageFile("visit-image.png"));
-    await advanceToResult();
-
-    typeInto(
-      screen.getByPlaceholderText("What you saw during the visit"),
-      "Clear acetowhite area noted",
+    expect(screen.getByText("Swede score")).toBeInTheDocument();
+    expect(screen.getByText(/3–5 o'clock/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /AI annotated/ })).toHaveAttribute(
+      "src",
+      "/api/v1/interpretations/7/overlay.png",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Confirm this finding" }));
-
-    expect(screen.getByText("Confirmed by clinician")).toBeInTheDocument();
-    expect(screen.getByText("Confirmed")).toBeInTheDocument();
-
-    const record = screen.getByRole("heading", { name: "Digital record" }).closest("article");
-    expect(record).not.toBeNull();
-    const digitalRecord = within(record as HTMLElement);
-    expect(digitalRecord.getByText("PT-1042")).toBeInTheDocument();
-    expect(digitalRecord.getByText("visit-image.png")).toBeInTheDocument();
-    expect(digitalRecord.getByText("Clear acetowhite area noted")).toBeInTheDocument();
-    expect(digitalRecord.getByText("Suspicious")).toBeInTheDocument();
-    expect(
-      digitalRecord.getByText("Refer to a partner hospital if you agree with this reading."),
-    ).toBeInTheDocument();
   });
 
-  it("confirm with a patient ID and no notes shows None added in the digital record", async () => {
+  it("shows the API error and lets the clinician retry", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: "Model unavailable" }), { status: 502 }));
     const { container } = render(<ScreeningScreen />);
-
-    typeInto(screen.getByPlaceholderText("For example, PT-1042"), "PT-2201");
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
     uploadImage(container);
-    await advanceToResult();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm this finding" }));
-
-    expect(screen.getByText("None added")).toBeInTheDocument();
-    expect(screen.getByText("PT-2201")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    expect(await screen.findByText("Model unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Read this image" })).toBeInTheDocument();
   });
 
-  it("Remove or Retake clears the image and returns to the empty capture and reading state", async () => {
+  it("requires a clinician ID, then confirms and links to referral and pharmacies", async () => {
     const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    await screen.findByRole("button", { name: "Confirm this finding" });
 
-    uploadImage(container, makeImageFile("to-clear.png"));
-    await advanceToResult();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm this finding" }));
+    expect(screen.getAllByText("Add your clinician ID before confirming.").length).toBeGreaterThan(0);
 
-    expect(screen.getByText("to-clear.png")).toBeInTheDocument();
-    expect(screen.getByText("Sample reading · preview")).toBeInTheDocument();
+    typeInto(screen.getByLabelText("Clinician ID"), "nurse-07");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm this finding" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Retake" }));
+    const link = await screen.findByRole("link", { name: /Refer & find pharmacies/ });
+    expect(link).toHaveAttribute("href", "/care/7");
+    const annotate = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/annotations"));
+    expect(JSON.parse(annotate![1]!.body as string)).toMatchObject({
+      clinician_id: "nurse-07",
+      via_result: "VIA_POSITIVE",
+    });
+    expect(screen.getByText("Confirmed by clinician")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Send by SMS" })).toBeInTheDocument();
+  });
 
-    expect(screen.queryByAltText("Screening image selected for this visit")).not.toBeInTheDocument();
-    expect(screen.queryByText("to-clear.png")).not.toBeInTheDocument();
-    expect(screen.getByText("The reading will appear here")).toBeInTheDocument();
-    expect(screen.getByText("Waiting for a capture")).toBeInTheDocument();
-    expect(screen.getByText("Waiting for an image")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Choose image" })).toBeInTheDocument();
+  it("records the other finding and hides the referral link when not suspicious", async () => {
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    typeInto(screen.getByLabelText("Clinician ID"), "nurse-07");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Record the other finding" }));
 
-    uploadImage(container, makeImageFile("second.png"));
-    expect(screen.getByText("second.png")).toBeInTheDocument();
+    await screen.findByText("Confirmed by clinician");
+    expect(screen.getByText("Not suspicious", { selector: ".classification" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Refer & find pharmacies/ })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  it("sends the patient result by WhatsApp (demo)", async () => {
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    typeInto(screen.getByLabelText("Clinician ID"), "nurse-07");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm this finding" }));
 
-    expect(screen.queryByText("second.png")).not.toBeInTheDocument();
-    expect(screen.getByText("The reading will appear here")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "WhatsApp" }));
+    await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue("WhatsApp preview"));
+    typeInto(screen.getByLabelText("Patient phone"), "+250788000000");
+    fireEvent.click(screen.getByRole("button", { name: "Send by WhatsApp" }));
+
+    expect(await screen.findByText("simulated")).toBeInTheDocument();
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/notifications"));
+    expect(JSON.parse(call![1]!.body as string)).toMatchObject({
+      channel: "whatsapp",
+      phone: "+250788000000",
+      sent_by: "nurse-07",
+    });
+  });
+
+  it("shows the rationale, the recommended action and the patient explanation", async () => {
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    const { clinical_summary, recommendation } = interpretationFixture;
+    expect(await screen.findByText(clinical_summary.rationale)).toBeInTheDocument();
+    expect(screen.getByText(recommendation.action)).toBeInTheDocument();
+    expect(screen.getByText(clinical_summary.patient_explanation)).toBeInTheDocument();
   });
 });
