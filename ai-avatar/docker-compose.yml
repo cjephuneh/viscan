@@ -1,6 +1,9 @@
 version: '3.8'
 
 services:
+  # ==========================================================
+  # 1. Main Service: FastAPI Uvicorn Server (Port 9090)
+  # ==========================================================
   ai-avatar:
     build:
       context: .
@@ -12,11 +15,13 @@ services:
       - APP_HOST=0.0.0.0
       - APP_PORT=9090
       - ENVIRONMENT=production
+      # Set to 'true' if you want tests to run and pass before starting Uvicorn
+      - RUN_TESTS_BEFORE_START=${RUN_TESTS_BEFORE_START:-false}
       # Remote PostgreSQL Database connection
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:password@remote-host:5432/viscan_avatar}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://dev_user:DevTeam2026_GlobalAccess@16.192.134.200:5432/app_db}
       - DB_ECHO=false
       # Anam AI credentials
-      - ANAM_API_KEY=${ANAM_API_KEY:-}
+      - ANAM_API_KEY=${ANAM_API_KEY:-NTRiMDcwZWEtNzQ5NC00MWIwLTg3ODAtMTUyZmIxNmZlNThiOnorYjJDa3VTUTFYSDcweE5UL0xNdzlNdHBEN3dtOFk3ZDdHbEpTMUR0cjQ9}
       - ANAM_BASE_URL=${ANAM_BASE_URL:-https://api.anam.ai/v1}
       - ANAM_DEFAULT_PERSONA_ID=${ANAM_DEFAULT_PERSONA_ID:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
@@ -24,6 +29,22 @@ services:
       - .env
     restart: unless-stopped
 
-    # If you need extra hosts or DNS resolution for remote databases on private networks
-    # extra_hosts:
-    #   - "remote-db-host:192.168.1.100"
+  # ==========================================================
+  # 2. Test Runner: Runs full automated test suite (pytest)
+  #    Usage: docker compose run --rm test
+  # ==========================================================
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: viscan-ai-avatar-tests
+    command: ["test"]
+    environment:
+      - ENVIRONMENT=testing
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://dev_user:DevTeam2026_GlobalAccess@16.192.134.200:5432/app_db}
+      - ANAM_API_KEY=${ANAM_API_KEY:-NTRiMDcwZWEtNzQ5NC00MWIwLTg3ODAtMTUyZmIxNmZlNThiOnorYjJDa3VTUTFYSDcweE5UL0xNdzlNdHBEN3dtOFk3ZDdHbEpTMUR0cjQ9}
+      - ANAM_BASE_URL=${ANAM_BASE_URL:-https://api.anam.ai/v1}
+    env_file:
+      - .env
+    profiles:
+      - test
