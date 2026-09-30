@@ -116,6 +116,10 @@ def test_image_upload_and_workflow(client, facility, app):
     assert result["prediction"] == "abnormal"
     assert result["confidence"] == 0.91
 
+    stored = client.get(f"/api/v1/ai-results/{result['id']}/")
+    assert stored.status_code == 200
+    assert stored.get_json()["model_version"] == "v1.0"
+
     assessment = client.post(
         f"/api/v1/screenings/{screening['id']}/assessment/",
         json={"result": "abnormal", "notes": "Clinician confirmed"},
@@ -195,12 +199,158 @@ def test_notification_and_language_stubs(client):
     assert translated.status_code == 200
     assert translated.get_json()["translated_text"] == "Screening completed"
 
+    whatsapp = client.post(
+        "/api/v1/notifications/whatsapp/",
+        json={"to": "+250788000000", "message": "Screening completed"},
+    )
+    assert whatsapp.status_code == 200
+    assert whatsapp.get_json()["provider"] == "stub"
+
     voice = client.post(
         "/api/v1/voice/synthesize/",
         json={"text": "Hello", "language": "en"},
     )
     assert voice.status_code == 200
     assert voice.get_json()["provider"] == "stub"
+
+
+def test_create_facility(client):
+    created = client.post(
+        "/api/v1/facilities/",
+        json={
+            "name": "Health Centre",
+            "type": "Health Centre",
+            "latitude": -1.94,
+            "longitude": 30.06,
+        },
+    )
+    assert created.status_code == 201
+    body = created.get_json()
+    assert body["name"] == "Health Centre"
+    assert body["is_active"] is True
+
+    listed = client.get("/api/v1/facilities/")
+    assert listed.status_code == 200
+    assert any(item["id"] == body["id"] for item in listed.get_json())
+
+
+def test_missing_screening(client):
+    missing = client.get("/api/v1/screenings/99999/")
+    assert missing.status_code == 404
+    assert missing.get_json()["detail"] == "Screening not found."
+
+    upload = client.post(
+        "/api/v1/screenings/99999/images/",
+        data={"file": (io.BytesIO(_png_bytes()), "via.png")},
+        content_type="multipart/form-data",
+    )
+    assert upload.status_code == 404
+
+    analyze = client.post("/api/v1/screenings/99999/analyze/")
+    assert analyze.status_code == 404
+
+    assessment = client.post(
+        "/api/v1/screenings/99999/assessment/",
+        json={"result": "normal"},
+    )
+    assert assessment.status_code == 404
+
+
+def test_missing_image(client):
+    response = client.get("/api/v1/images/99999/")
+    assert response.status_code == 404
+    assert response.get_json()["detail"] == "Image not found."
+
+    file_response = client.get("/api/v1/images/99999/file")
+    assert file_response.status_code == 404
+
+
+def test_invalid_request(client, facility):
+    bad_code = client.post(
+        "/api/v1/screenings/",
+        json={"facility_id": facility, "patient_code": "x"},
+    )
+    assert bad_code.status_code == 422
+    assert "detail" in bad_code.get_json()
+
+    missing_fields = client.post("/api/v1/facilities/", json={"name": ""})
+    assert missing_fields.status_code == 422
+    assert "detail" in missing_fields.get_json()
+
+    created = client.post(
+        "/api/v1/screenings/",
+        json={"facility_id": facility, "patient_code": "VIA-000020"},
+    )
+    assert created.status_code == 201
+    screening_id = created.get_json()["id"]
+
+    empty_update = client.patch(f"/api/v1/screenings/{screening_id}/", json={})
+    assert empty_update.status_code == 400
+    assert empty_update.get_json()["detail"] == "No fields provided for update."
+
+
+def test_ai_invalid_response(client, facility):
+    screening = client.post(
+        "/api/v1/screenings/",
+        json={"facility_id": facility, "patient_code": "VIA-000021"},
+    ).get_json()
+    client.post(
+        f"/api/v1/screenings/{screening['id']}/images/",
+        data={"file": (io.BytesIO(_png_bytes()), "via.png")},
+        content_type="multipart/form-data",
+    )
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"prediction": "abnormal"}
+
+    with patch("app.services.ai_service.httpx.Client") as client_cls:
+        client_cls.return_value.__enter__.return_value.post.return_value = mock_response
+        response = client.post(f"/api/v1/screenings/{screening['id']}/analyze/")
+
+    assert response.status_code == 502
+    assert response.get_json()["detail"] == "AI service returned an incomplete response."
+
+
+def test_health_database_error(client):
+    with patch(
+        "app.routes.health_routes.db.session.execute",
+        side_effect=RuntimeError("db down"),
+    ):
+        response = client.get("/api/v1/health/")
+
+    assert response.status_code == 503
+    assert response.get_json() == {"status": "degraded", "database": "disconnected"}
+
+
+def test_invalid_assessment(client, facility):
+    screening = client.post(
+        "/api/v1/screenings/",
+        json={"facility_id": facility, "patient_code": "VIA-000022"},
+    ).get_json()
+
+    empty = client.post(
+        f"/api/v1/screenings/{screening['id']}/assessment/",
+        json={"result": ""},
+    )
+    assert empty.status_code == 422
+    assert "detail" in empty.get_json()
+
+    created = client.post(
+        f"/api/v1/screenings/{screening['id']}/assessment/",
+        json={"result": "normal", "notes": "ok"},
+    )
+    assert created.status_code == 201
+
+    duplicate = client.post(
+        f"/api/v1/screenings/{screening['id']}/assessment/",
+        json={"result": "abnormal"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.get_json()["detail"] == "Assessment already exists for this screening."
+
+    missing = client.get(f"/api/v1/screenings/{screening['id'] + 1000}/assessment/")
+    assert missing.status_code == 404
 
 
 def test_openapi_available(client):
