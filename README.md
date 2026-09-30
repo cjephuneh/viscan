@@ -10,24 +10,37 @@ ViScan is an end-to-end clinical platform for AI-assisted cervical cancer screen
 viscan/
 ├── frontend/             # Next.js 15 Clinician Screening & Patient Intake Workstation (Port 3000)
 ├── backend/              # Core Flask Screening API, PostgreSQL & Notification Worker (Port 8080)
+├── ai-interpreter/       # VIA Cervical Screening AI Interpretation & Rules Engine (Port 5050)
 ├── ai-avatar/            # FastAPI Microservice: Clinical Video Reporting via Anam AI (Port 9090)
-├── app/                  # VIA Cervical Screening AI Interpretation & Rules Engine (Port 5050)
-├── docs/                 # Platform API documentation (docs/API.md)
-└── scripts/              # Dataset evaluation and utilities
+├── docker-compose.yml    # Master multi-service deployment orchestrator
+└── README.md             # Unified Platform Documentation
 ```
 
 | Component | Directory | Framework / Stack | Port | Primary Responsibility |
 |---|---|---|---|---|
 | **Frontend** | [`frontend/`](./frontend) | Next.js 15, TypeScript, Tailwind | `3000` | Clinician workstation, patient check-in, Mia avatar streaming, and care referral maps. |
 | **Core Backend** | [`backend/`](./backend) | Python 3.11, Flask, PostgreSQL | `8080` | Patient screening records, image queues, SMS/WhatsApp notifications, facility locator. |
-| **AI Interpreter** | [`app/`](./app) | Flask, OpenAI Vision, WHO Rules | `5050` | Evaluates acetic acid images, identifies lesions, calculates SWEDE scores & risk indices. |
+| **AI Interpreter** | [`ai-interpreter/`](./ai-interpreter) | Flask, OpenAI Vision, WHO Rules | `5050` | Evaluates acetic acid images, identifies lesions, calculates SWEDE scores & risk indices. |
 | **AI Avatar** | [`ai-avatar/`](./ai-avatar) | FastAPI, Async SQLAlchemy, Anam AI | `9090` | Generates direct playable MP4 clinician video reports and HTML5 interactive video player. |
 
 ---
 
 ## 🚀 Quick Start Guide
 
-### 1. Frontend (`frontend/`)
+### 1. Unified Multi-Service Launch (Docker Compose)
+To launch all services together from the repository root:
+```bash
+docker compose up --build -d
+```
+- **Frontend UI**: `http://localhost:3000`
+- **AI Interpreter**: `http://localhost:5050`
+- **AI Avatar Service**: `http://localhost:9090`
+
+---
+
+### 2. Standalone Service Guides
+
+#### Frontend ([`frontend/`](./frontend))
 ```bash
 cd frontend
 npm ci
@@ -38,7 +51,7 @@ npm test
 - `/screening` — Clinician workstation for review, AI diagnostic confirmation, and assessment.
 - `/care/{id}` — Care map, nearby pharmacies from OpenStreetMap, and partner hospital referrals.
 
-### 2. Core Backend (`backend/`)
+#### Core Backend ([`backend/`](./backend))
 ```bash
 cd backend
 cp .env.example .env
@@ -51,29 +64,30 @@ python run.py               # http://localhost:8080
 - API Docs: `http://localhost:8080/api/v1/docs`
 - Health: `http://localhost:8080/api/v1/health/`
 
-### 3. AI Interpreter (`app/`)
+#### AI Interpreter ([`ai-interpreter/`](./ai-interpreter))
 ```bash
-# In repository root
+cd ai-interpreter
 cp .env.example .env
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 python run.py               # http://localhost:5050
 pytest -q
 ```
-- Full API reference: [docs/API.md](./docs/API.md)
+- Standalone Docker: `cd ai-interpreter && docker compose up --build`
+- Full API reference: [`ai-interpreter/docs/API.md`](./ai-interpreter/docs/API.md)
 
-### 4. AI Avatar Microservice (`ai-avatar/`)
+#### AI Avatar Microservice ([`ai-avatar/`](./ai-avatar))
 ```bash
 cd ai-avatar
 cp .env.example .env
 # Run with Docker:
 docker compose up --build -d ai-avatar     # http://localhost:9090
-# Or run automated test suite in Docker:
+# Run automated test suite:
 docker compose run --rm test
 ```
 - Swagger Docs: `http://localhost:9090/docs`
 - Video Player: `http://localhost:9090/player/{report_id}`
-- Integration Guide: [ai-avatar/FRONTEND_API_GUIDE.md](./ai-avatar/FRONTEND_API_GUIDE.md)
+- Integration Guide: [`ai-avatar/FRONTEND_API_GUIDE.md`](./ai-avatar/FRONTEND_API_GUIDE.md)
 
 ---
 
@@ -81,7 +95,7 @@ docker compose run --rm test
 
 - **Frontend Tests**: `cd frontend && npm test`
 - **Core Backend Tests**: `cd backend && pytest`
-- **AI Interpreter Tests**: `pytest tests/test_api.py`
+- **AI Interpreter Tests**: `cd ai-interpreter && pytest tests/test_api.py`
 - **AI Avatar Tests**: `cd ai-avatar && pytest -v` (or `docker compose run --rm test`)
 
 ---
