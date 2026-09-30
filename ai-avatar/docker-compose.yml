@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  ai-avatar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: viscan-ai-avatar
+    ports:
+      - "9090:9090"
+    environment:
+      - APP_HOST=0.0.0.0
+      - APP_PORT=9090
+      - ENVIRONMENT=production
+      # Remote PostgreSQL Database connection
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:password@remote-host:5432/viscan_avatar}
+      - DB_ECHO=false
+      # Anam AI credentials
+      - ANAM_API_KEY=${ANAM_API_KEY:-}
+      - ANAM_BASE_URL=${ANAM_BASE_URL:-https://api.anam.ai/v1}
+      - ANAM_DEFAULT_PERSONA_ID=${ANAM_DEFAULT_PERSONA_ID:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    env_file:
+      - .env
+    restart: unless-stopped
+
+    # If you need extra hosts or DNS resolution for remote databases on private networks
+    # extra_hosts:
+    #   - "remote-db-host:192.168.1.100"
