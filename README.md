@@ -1,84 +1,89 @@
-# VIScan - AI interpreter for VIA cervical screening
+# ViScan — AI-Powered Cervical Cancer Screening Platform
 
-Flask API that interprets VIA (acetic acid) cervical images with an OpenAI vision model and a
-deterministic WHO-based rules engine. Returns a suspicious / not-suspicious verdict, lesion
-findings, risk index, treatment eligibility and recommendation, and stores everything for
-clinician review and outcome tracking.
+ViScan is an end-to-end clinical platform for AI-assisted cervical cancer screening (VIA digital colposcopy), patient intake, risk stratification, automated notification, and digital avatar clinical reporting.
 
-Full API reference: [docs/API.md](docs/API.md)
+---
 
-## Repository layout
+## 📁 Repository Layout & Services
 
-| Path | What |
-|---|---|
-| `app/`, `run.py` | Flask backend (API, AI interpreter, rules engine, database) |
-| `frontend/` | Next.js clinician screening UI |
-| `tests/` | Backend tests (pytest); frontend tests live in `frontend/tests/` |
-| `docs/API.md` | API reference |
-| `scripts/` | Dataset download and evaluation |
+```
+viscan/
+├── frontend/             # Next.js 15 Clinician Screening & Patient Intake Workstation (Port 3000)
+├── backend/              # Core Flask Screening API, PostgreSQL & Notification Worker (Port 8080)
+├── ai-avatar/            # FastAPI Microservice: Clinical Video Reporting via Anam AI (Port 9090)
+├── app/                  # VIA Cervical Screening AI Interpretation & Rules Engine (Port 5050)
+├── docs/                 # Platform API documentation (docs/API.md)
+└── scripts/              # Dataset evaluation and utilities
+```
 
-## Frontend
+| Component | Directory | Framework / Stack | Port | Primary Responsibility |
+|---|---|---|---|---|
+| **Frontend** | [`frontend/`](./frontend) | Next.js 15, TypeScript, Tailwind | `3000` | Clinician workstation, patient check-in, Mia avatar streaming, and care referral maps. |
+| **Core Backend** | [`backend/`](./backend) | Python 3.11, Flask, PostgreSQL | `8080` | Patient screening records, image queues, SMS/WhatsApp notifications, facility locator. |
+| **AI Interpreter** | [`app/`](./app) | Flask, OpenAI Vision, WHO Rules | `5050` | Evaluates acetic acid images, identifies lesions, calculates SWEDE scores & risk indices. |
+| **AI Avatar** | [`ai-avatar/`](./ai-avatar) | FastAPI, Async SQLAlchemy, Anam AI | `9090` | Generates direct playable MP4 clinician video reports and HTML5 interactive video player. |
 
+---
+
+## 🚀 Quick Start Guide
+
+### 1. Frontend (`frontend/`)
 ```bash
 cd frontend
 npm ci
-npm run dev                 # http://127.0.0.1:3000
+npm run dev                 # http://localhost:3000
 npm test
 ```
+- `/` — Patient welcome screen featuring Mia, an Anam AI avatar guiding patients through intake and breathing exercises.
+- `/screening` — Clinician workstation for review, AI diagnostic confirmation, and assessment.
+- `/care/{id}` — Care map, nearby pharmacies from OpenStreetMap, and partner hospital referrals.
 
-The UI calls `/api/v1/*` on its own origin; a Next.js route handler forwards those requests to
-the Flask API, so the browser never needs the backend URL or API key.
-
-| Variable (server-side) | Default | Description |
-|---|---|---|
-| `VISCAN_API_URL` | `http://127.0.0.1:5050` | Flask API base URL |
-| `VISCAN_API_KEY` | – | Sent as `X-API-Key` when the API requires it |
-
-Pages:
-
-- `/` — patient welcome. Mia, an AI avatar ([Anam](https://docs.anam.ai/)), explains VIA
-  screening, calms nervous patients (breathing exercise, concerns noted for the nurse), asks name,
-  age, sex and the health questions, then shows a check-in code. Falls back to a short form if the
-  avatar or microphone is unavailable.
-- `/screening` — clinician workstation: checked-in patients (pre-filled visit details, nurse
-  flags, anxiety change), visit details, AI reading, clinician confirmation, send results.
-  `/screening?intake={id}` opens a specific check-in.
-- `/care/{interpretation_id}` (map of nearby pharmacies from OpenStreetMap, partner hospitals with
-referral, suggested supplies, send results by SMS/WhatsApp — messages are simulated for now).
-
-## Run with Docker
-
+### 2. Core Backend (`backend/`)
 ```bash
-cp .env.example .env        # add OPENAI_API_KEY, ANAM_API_KEY (and DB_* for Postgres)
-docker compose up --build   # UI: http://localhost:3000 · API: http://localhost:5050
+cd backend
+cp .env.example .env
+docker compose up -d        # Starts PostgreSQL on port 5432
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+flask db upgrade            # Apply Alembic schema migrations
+python run.py               # http://localhost:8080
 ```
+- API Docs: `http://localhost:8080/api/v1/docs`
+- Health: `http://localhost:8080/api/v1/health/`
 
-| Service | Image | Dockerfile | Port |
-|---|---|---|---|
-| `backend` | `viscan-backend` | `Dockerfile` (Flask + gunicorn) | 5050 |
-| `frontend` | `viscan-frontend` | `frontend/Dockerfile` (Next.js standalone) | 3000 |
-
-The frontend reaches the API at `http://backend:5050` inside the compose network. Without
-`DB_HOST` (or `DATABASE_URL`), data is stored in SQLite on the `viscan-data` volume; set
-`DATABASE_URL=sqlite:////data/viscan.db` in `.env` to force SQLite while `DB_*` is configured.
-
-Browsers only allow microphone access (needed for the Mia avatar) on `https://` or `localhost`,
-so put the frontend behind an HTTPS reverse proxy when deploying to a server.
-
-## Run locally
-
+### 3. AI Interpreter (`app/`)
 ```bash
+# In repository root
+cp .env.example .env
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 python run.py               # http://localhost:5050
 pytest -q
 ```
+- Full API reference: [docs/API.md](./docs/API.md)
 
-## Dataset evaluation (optional)
-
+### 4. AI Avatar Microservice (`ai-avatar/`)
 ```bash
-python scripts/malhari.py download --include-pap --per-label 4
-python scripts/malhari.py evaluate --include-pap
+cd ai-avatar
+cp .env.example .env
+# Run with Docker:
+docker compose up --build -d ai-avatar     # http://localhost:9090
+# Or run automated test suite in Docker:
+docker compose run --rm test
 ```
+- Swagger Docs: `http://localhost:9090/docs`
+- Video Player: `http://localhost:9090/player/{report_id}`
+- Integration Guide: [ai-avatar/FRONTEND_API_GUIDE.md](./ai-avatar/FRONTEND_API_GUIDE.md)
 
-Decision support only - a trained clinician must confirm every result.
+---
+
+## 🧪 Testing
+
+- **Frontend Tests**: `cd frontend && npm test`
+- **Core Backend Tests**: `cd backend && pytest`
+- **AI Interpreter Tests**: `pytest tests/test_api.py`
+- **AI Avatar Tests**: `cd ai-avatar && pytest -v` (or `docker compose run --rm test`)
+
+---
+
+*Decision support only — a certified clinician must confirm every automated result.*
