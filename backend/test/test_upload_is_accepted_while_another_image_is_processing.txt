@@ -1,0 +1,2 @@
+tests/test_analysis_queue.py::test_upload_is_accepted_while_another_image_is_processing
+passed

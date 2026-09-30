@@ -1,0 +1,2 @@
+tests/test_workflow.py::test_health_ok
+passed

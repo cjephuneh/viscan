@@ -1,0 +1,2 @@
+tests/test_workflow.py::test_missing_image
+passed
