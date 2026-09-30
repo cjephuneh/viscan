@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CoachPanel } from "@/components/coach-panel";
 import type { CoachSession } from "@/lib/coach";
@@ -135,7 +135,7 @@ describe("CoachPanel", () => {
 
     await tool("add_action_step", { step: "Refer for LEEP", why: "TZ type 3" });
     fireEvent.click(screen.getByRole("checkbox", { name: /Refer for LEEP/ }));
-    expect(await screen.findByRole("checkbox", { name: /Refer for LEEP/ })).toBeChecked();
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /Refer for LEEP/ })).toBeChecked());
 
     await tool("start_roleplay", { scenario: "Telling Grace her result" });
     expect(screen.getByText("Role-play · Kezia is the patient")).toBeInTheDocument();

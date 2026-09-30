@@ -246,19 +246,25 @@ def get_image_file(image_id):
 
 @api_bp.get("/images/<int:image_id>/thumb.jpg")
 def get_image_thumbnail(image_id):
-    """Small JPEG preview (max 320 px), cached next to the uploads."""
+    """Small JPEG preview (max 320 px), cached in blob storage under thumbs/."""
+    import io
+
     from PIL import Image
 
     image = _get_or_404(ViaImage, image_id)
-    upload_dir = Path(current_app.config["UPLOAD_DIR"])
-    thumb = upload_dir / "thumbs" / f"{image.id}.jpg"
-    if not thumb.exists():
-        thumb.parent.mkdir(parents=True, exist_ok=True)
-        with Image.open(upload_dir / image.filename) as img:
+    storage = get_storage()
+    thumb_key = f"thumbs/{image.id}.jpg"
+    try:
+        data = storage.get(thumb_key)
+    except FileNotFoundError:
+        with Image.open(io.BytesIO(_image_bytes_or_404(image))) as img:
             img = img.convert("RGB")
             img.thumbnail((320, 320))
-            img.save(thumb, "JPEG", quality=80)
-    return send_from_directory(thumb.parent, thumb.name, mimetype="image/jpeg", max_age=86400)
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=80)
+        data = buf.getvalue()
+        storage.put(thumb_key, data, "image/jpeg")
+    return Response(data, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @api_bp.get("/screenings")

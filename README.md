@@ -112,7 +112,7 @@ entrypoint and routes to the four services (see [`nginx/nginx.conf`](./nginx/ngi
 | Path | Service |
 |---|---|
 | `/`, everything not below | frontend |
-| `/api/v1/*` (interpret, intake, interpretations, images/&lt;id&gt;/file, avatar, worklist, …) | ai-interpreter |
+| `/api/v1/*` (interpret, intake, interpretations, images/&lt;id&gt;/file, avatar, coach, worklist, `/api/v1/screenings` without trailing slash, …) | ai-interpreter |
 | `/api/v1/{facilities,screenings,analysis-queue,analysis-jobs,ai-results,maps,notifications,language,voice}/`, `/api/v1/health/`, `/api/v1/docs`, `/api/v1/backend-images/<id>/file` | backend |
 | `/api/v1/reports`, `/api/v1/personas`, `/player/*` | ai-avatar |
 
