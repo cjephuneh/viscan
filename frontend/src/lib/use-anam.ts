@@ -7,7 +7,10 @@ export type AvatarStatus = "idle" | "connecting" | "live" | "ended" | "error";
 export type ChatLine = { role: "user" | "persona"; content: string };
 export type ToolHandlers = Record<string, (args: Record<string, unknown>) => Promise<string>>;
 
-export function useAnamAvatar(videoId: string) {
+/** Subset of the SDK's client options we expose (see AnamPublicClientOptions). */
+export type StartOptions = { disableInputAudio?: boolean };
+
+export function useAnamAvatar(videoId: string, personaName = "Mia") {
   const clientRef = useRef<AnamClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const historyRef = useRef<ChatLine[]>([]);
@@ -21,12 +24,12 @@ export function useAnamAvatar(videoId: string) {
   const [history, setHistory] = useState<ChatLine[]>([]);
 
   const start = useCallback(
-    async (sessionToken: string, tools: ToolHandlers) => {
+    async (sessionToken: string, tools: ToolHandlers, options?: StartOptions) => {
       setStatus("connecting");
       setError("");
       try {
         const { createClient, AnamEvent, ConnectionClosedCode } = await import("@anam-ai/js-sdk");
-        const client = createClient(sessionToken);
+        const client = createClient(sessionToken, options);
         clientRef.current = client;
 
         for (const [name, run] of Object.entries(tools)) {
@@ -72,9 +75,9 @@ export function useAnamAvatar(videoId: string) {
           const normal = reason === ConnectionClosedCode.NORMAL;
           setStatus((current) => (current === "ended" || normal ? "ended" : "error"));
           if (reason === ConnectionClosedCode.MICROPHONE_PERMISSION_DENIED) {
-            setError("Mia needs your microphone to hear you. You can answer by typing instead.");
+            setError(`${personaName} needs your microphone to hear you. You can answer by typing instead.`);
           } else if (!normal) {
-            setError(details || "The connection to Mia was lost.");
+            setError(details || `The connection to ${personaName} was lost.`);
           }
         });
 
@@ -85,10 +88,10 @@ export function useAnamAvatar(videoId: string) {
       } catch (err) {
         clientRef.current = null;
         setStatus("error");
-        setError((err as Error).message || "Could not connect to Mia.");
+        setError((err as Error).message || `Could not connect to ${personaName}.`);
       }
     },
-    [videoId],
+    [videoId, personaName],
   );
 
   const stop = useCallback(async () => {
@@ -106,6 +109,14 @@ export function useAnamAvatar(videoId: string) {
     const lines = [...historyRef.current, { role: "user" as const, content: text.trim() }];
     historyRef.current = lines;
     setHistory(lines);
+    return true;
+  }, []);
+
+  /** Make the persona speak this exact text (no LLM involved). */
+  const talk = useCallback(async (text: string) => {
+    const client = clientRef.current;
+    if (!client || !text.trim()) return false;
+    await client.talk(text.trim());
     return true;
   }, []);
 
@@ -141,6 +152,7 @@ export function useAnamAvatar(videoId: string) {
     start,
     stop,
     say,
+    talk,
     toggleMute,
   };
 }

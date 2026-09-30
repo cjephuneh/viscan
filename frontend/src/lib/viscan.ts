@@ -272,3 +272,29 @@ export async function getVideoReport(interpretationId: number): Promise<VideoRep
   if (!res.ok) throw new Error(data.error || data.detail || `Request failed (${res.status})`);
   return data as VideoReport;
 }
+
+export type VideoSession = {
+  report_id: string;
+  session_token: string;
+  persona_id: string | null;
+  generated_script: string;
+  expires_in_seconds: number;
+};
+
+/**
+ * Live (WebRTC) session in which the avatar presents the confirmed report
+ * immediately, while the MP4 is still rendering. `null` if the report does
+ * not exist yet.
+ */
+export async function getVideoSession(interpretationId: number): Promise<VideoSession | null> {
+  const res = await fetch(`${API}/reports/${videoScanId(interpretationId)}/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.detail || `Request failed (${res.status})`);
+  return data as VideoSession;
+}

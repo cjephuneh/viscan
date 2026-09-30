@@ -4027,3 +4027,65 @@ button:disabled {
     transform: rotate(360deg);
   }
 }
+
+.video-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.video-frame video.on {
+  opacity: 1;
+}
+
+.video-frame.live.speaking {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.live-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 26, 31, 0.75);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e5484d;
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.live-caption {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(15, 26, 31, 0.75);
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}

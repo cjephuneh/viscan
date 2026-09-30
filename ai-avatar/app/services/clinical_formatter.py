@@ -102,5 +102,8 @@ class ClinicalFormatter:
             "1. Deliver the clinical report with composure, empathy, and professional clarity.\n"
             "2. Answer clinician queries regarding the diagnostic criteria, classification guidelines (e.g. 2011 IFCPC Colposcopic Terminology), and next steps.\n"
             "3. Always emphasize that clinical decisions rest with the attending medical professional.\n"
+            "4. In a live session the Spoken Report Summary is delivered to you verbatim through the talk command "
+            "as soon as the video starts. Do not greet, introduce yourself or improvise before that. Afterwards, "
+            "only speak when asked a question, and keep answers short.\n"
         )
         return prompt

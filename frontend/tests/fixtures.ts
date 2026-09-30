@@ -202,6 +202,8 @@ export function mockFetch(
     waiting?: Intake[];
     /** Video-report poll responses, consumed in order (last one repeats). 404 = report not created yet. */
     video?: (VideoReport | 404 | 502)[];
+    /** Non-2xx status for the live-session request (e.g. 404 while the report is not created yet). */
+    sessionStatus?: number;
   } = {},
 ) {
   let referred = false;
@@ -216,6 +218,17 @@ export function mockFetch(
       return json(intakeFixture);
     if (url.endsWith("/annotations"))
       return json({ agrees_with_ai: true, review_status: "reviewed", video_report: { scan_id: "viscan-7", status: "requested" } }, 201);
+    if (url === "/api/v1/reports/viscan-7/session" && method === "POST") {
+      if (overrides.sessionStatus === 404) return json({ detail: "Report not found" }, 404);
+      if (overrides.sessionStatus) return json({ error: "The video report service is not reachable." }, overrides.sessionStatus);
+      return json({
+        report_id: "rep-7",
+        session_token: "anam-report-token",
+        persona_id: null,
+        generated_script: "Hello. This is your VIScan report.\n\nThe screening result is VIA positive.\n\nPlease attend the referral.",
+        expires_in_seconds: 3600,
+      });
+    }
     if (url === "/api/v1/reports/viscan-7/video") {
       const next = video.length > 1 ? video.shift()! : video[0];
       if (next === 404) return json({ detail: "Report not found" }, 404);
