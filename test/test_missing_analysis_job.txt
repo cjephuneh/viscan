@@ -1,0 +1,2 @@
+tests/test_analysis_queue.py::test_missing_analysis_job
+passed
