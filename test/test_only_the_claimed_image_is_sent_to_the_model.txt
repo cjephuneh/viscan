@@ -1,0 +1,2 @@
+tests/test_analysis_queue.py::test_only_the_claimed_image_is_sent_to_the_model
+passed
