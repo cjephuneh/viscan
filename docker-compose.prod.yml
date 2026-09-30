@@ -49,6 +49,11 @@ services:
     image: certbot/certbot:latest
     container_name: viscan-certbot
     restart: unless-stopped
+    # Public resolvers: the cloud VPC resolver can hold a stale "no such
+    # domain" answer for up to 30 min after DNS records are created.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       DOMAIN: ${DOMAIN:-viscan.site}
       CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
