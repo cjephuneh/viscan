@@ -1,0 +1,2 @@
+tests/test_workflow.py::test_notification_and_language_stubs
+passed
