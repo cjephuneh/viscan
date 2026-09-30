@@ -157,7 +157,7 @@ describe("WelcomeScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Finish" }));
     expect(await screen.findByRole("heading", { name: "Thank you, Grace." })).toBeInTheDocument();
     expect(sdk.stopped).toBe(true);
-    expect(screen.getByRole("link", { name: "Staff: open screening" })).toHaveAttribute("href", "/screening?intake=5");
+    expect(screen.getByRole("link", { name: "Staff: open screening" })).toHaveAttribute("href", "/?intake=5");
   });
 
   it("falls back to the short form when the avatar is unavailable", async () => {

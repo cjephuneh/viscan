@@ -127,9 +127,9 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
 
       <header className="care-header">
         <nav className="breadcrumb" aria-label="Breadcrumb">
-          <Link href="/screenings">Past screenings</Link>
+          <Link href="/">Screening</Link>
           <span aria-hidden="true">/</span>
-          <Link href={`/screenings?q=%23${interpretationId}`}>Reading #{interpretationId}</Link>
+          <span>Reading #{interpretationId}</span>
           <span aria-hidden="true">/</span>
           <span aria-current="page">Care</span>
         </nav>

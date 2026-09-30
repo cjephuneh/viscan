@@ -1,9 +1,7 @@
-import type { Metadata } from "next";
-import { ScreeningScreen } from "@/components/screening-screen";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "New screening · VISCAN" };
-
-export default async function ScreeningPage({ searchParams }: { searchParams: Promise<{ intake?: string }> }) {
+// Old clinician URL; the screening screen now lives at "/".
+export default async function LegacyScreeningPage({ searchParams }: { searchParams: Promise<{ intake?: string }> }) {
   const { intake } = await searchParams;
-  return <ScreeningScreen intakeId={intake} />;
+  redirect(intake ? `/?intake=${encodeURIComponent(intake)}` : "/");
 }

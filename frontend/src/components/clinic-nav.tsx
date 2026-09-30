@@ -4,15 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ViscanMark } from "@/components/viscan-mark";
 
+// MVP: two screens only. Clinician screening (with its care step) and patient check-in.
 export const CLINIC_LINKS = [
-  { href: "/dashboard", label: "Overview", match: ["/dashboard"] },
-  { href: "/screening", label: "New screening", match: ["/screening"] },
-  { href: "/screenings", label: "Past screenings", match: ["/screenings", "/care"] },
-  { href: "/learn", label: "Training", match: ["/learn"] },
+  { href: "/", label: "Screening", match: ["/", "/care"] },
+  { href: "/patient", label: "Patient check-in", match: ["/patient"] },
 ];
 
 export function isActive(pathname: string, match: string[]) {
-  return match.some((m) => pathname === m || pathname.startsWith(`${m}/`));
+  return match.some((m) => (m === "/" ? pathname === "/" : pathname === m || pathname.startsWith(`${m}/`)));
 }
 
 export function ClinicNav() {
@@ -21,13 +20,13 @@ export function ClinicNav() {
   return (
     <header className="clinic-bar">
       <div className="clinic-bar-inner">
-        <Link href="/dashboard" className="clinic-brand" aria-label="VISCAN overview">
+        <Link href="/" className="clinic-brand" aria-label="VISCAN screening">
           <span className="mark" aria-hidden="true">
             <ViscanMark />
           </span>
           <span>
             <strong>VISCAN</strong>
-            <small>Clinic workspace</small>
+            <small>VIA screening</small>
           </span>
         </Link>
         <nav aria-label="Clinic">
@@ -44,9 +43,6 @@ export function ClinicNav() {
             })}
           </ul>
         </nav>
-        <Link href="/" className="clinic-checkin">
-          Patient check-in
-        </Link>
       </div>
     </header>
   );

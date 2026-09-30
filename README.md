@@ -47,14 +47,19 @@ npm ci
 npm run dev                 # http://localhost:3000
 npm test
 ```
-The site has two areas. The patient area is just `/`, with no staff navigation because patients use it. Every staff page (`src/app/(clinic)/`) shares one navigation bar: Overview, New screening, Past screenings, Training, plus a "Patient check-in" button.
+The frontend is deliberately reduced to the MVP: it opens directly on the clinician screen, and there is one patient screen.
+Both share a two-link bar (`src/app/(clinic)/layout.tsx`).
 
-- `/` — Patient welcome screen featuring Mia, an Anam AI avatar guiding patients through intake and breathing exercises. "Staff area →" opens the Overview.
-- `/dashboard` — Overview: quick actions, screening totals, patients checked in and waiting, readings that need review (highest risk first), overdue follow-ups and recent screenings. "See all" opens Past screenings with the matching filters.
-- `/screening` — Clinician workstation for review, AI diagnostic confirmation, and assessment. "Walk me through this with Kezia" docks the AI clinical coach next to any reading.
-- `/screenings` — Past screenings: every AI reading with the confirmed result, risk, follow-up date and whether the patient was referred, messaged or used for coaching. Search by patient ID, name, site or `#reading`, filter by verdict, review status, dates, referred or overdue, and sort by date or risk. Filters can be set in the URL (`?q=`, `verdict`, `status`, `sort`, `referred=1`, `overdue=1`). Expand a row for the annotated image, the recommendation and links to the report, care page and a Kezia lesson on that case (`/learn?case=<id>`).
-- `/learn` — Training with Kezia, an Anam AI clinical coach: pick a past reading or a practice lesson; she highlights parts of the result, traces lesions on a cervix clock face, builds an action plan, quizzes you (scored) and role-plays the patient so you can rehearse counselling. Lessons are kept as a training record.
-- `/care/{id}` — Care map, nearby pharmacies from OpenStreetMap, and partner hospital referrals.
+- `/` — Clinician screening: enter the patient details (or pick a patient who checked in with Mia), add **one** VIA image,
+  get the AI reading, confirm or correct it. After confirmation: digital record, printable report, avatar **video report**
+  (iframe), send results by SMS/WhatsApp, and "Start another screening" for the next image. "Walk me through this with Kezia"
+  docks the AI clinical coach next to the reading.
+- `/patient` — Patient check-in: Mia, an Anam AI avatar, guides the patient through intake and breathing exercises (a short
+  form is the fallback). Ends with a code the clinician uses on `/`.
+- `/care/{id}` — Step after a suspicious confirmed result: referral to a partner hospital, nearby pharmacies (OpenStreetMap),
+  the video report and result messaging.
+
+`/screening` redirects to `/`. The former overview, past-screenings and training pages were removed for the MVP.
 
 #### Core Backend ([`backend/`](./backend))
 ```bash

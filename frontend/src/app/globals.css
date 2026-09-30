@@ -3809,21 +3809,6 @@ button:disabled {
   background: var(--accent-soft);
 }
 
-.clinic-checkin {
-  flex: none;
-  padding: 7px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  color: var(--accent);
-  font-weight: 600;
-  font-size: 0.92rem;
-  text-decoration: none;
-}
-
-.clinic-checkin:hover {
-  border-color: var(--accent);
-}
-
 .clinic-bar ~ .page {
   min-height: calc(100vh - 57px);
 }
