@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # =============================================================
+  # 1. Reverse Proxy Gateway (Nginx)
+  # =============================================================
+  gateway:
+    build:
+      context: ./nginx
+    container_name: viscan-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - ai-interpreter
+      - ai-avatar
+      - backend
+    networks:
+      - viscan-network
+
+  # =============================================================
+  # 2. Next.js Frontend (Clinician & Patient Intake UI)
+  # =============================================================
+  frontend:
+    build:
+      context: ./frontend
+    container_name: viscan-frontend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
+      - VISCAN_API_URL=http://ai-interpreter:5050
+    networks:
+      - viscan-network
+
+  # =============================================================
+  # 3. AI Interpreter (VIA AI Vision & Mia Intake Avatar)
+  # =============================================================
+  ai-interpreter:
+    build:
+      context: ./ai-interpreter
+    container_name: viscan-ai-interpreter
+    restart: unless-stopped
+    env_file:
+      - ./ai-interpreter/.env
+    volumes:
+      - viscan-interpreter-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      viscan-network:
+        aliases:
+          - backend-interpreter
+          - backend
+
+  # =============================================================
+  # 4. AI Avatar Microservice (Clinical Video Report Generator)
+  # =============================================================
+  ai-avatar:
+    build:
+      context: ./ai-avatar
+    container_name: viscan-ai-avatar
+    restart: unless-stopped
+    env_file:
+      - ./ai-avatar/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - viscan-network
+
+  # =============================================================
+  # 5. Core VISCAN Backend API (Screenings, Queue & Notifications)
+  # =============================================================
+  backend:
+    build:
+      context: ./backend
+    container_name: viscan-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      - PORT=8080
+      - FLASK_ENV=production
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5432
+      - DB_USER=dev_user
+      - DB_PASSWORD=DevTeam2026_GlobalAccess
+      - DB_NAME=app_db
+      - DB_SSLMODE=disable
+      - AI_API_URL=http://ai-interpreter:5050
+    volumes:
+      - viscan-backend-uploads:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - viscan-network
+
+networks:
+  viscan-network:
+    driver: bridge
+
+volumes:
+  viscan-interpreter-data:
+  viscan-backend-uploads:
