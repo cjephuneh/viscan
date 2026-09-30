@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VIScan - AI-assisted VIA interpretation</title>
+  <style>
+    :root { --bg:#f6f7fb; --card:#fff; --ink:#1d2433; --muted:#667085; --brand:#7a2e8e;
+            --neg:#16a34a; --pos:#ea580c; --sus:#dc2626; --inad:#6b7280; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+    header { background:var(--brand); color:#fff; padding:16px 28px; display:flex; align-items:center; gap:24px; }
+    header h1 { margin:0; font-size:22px; } header p { margin:2px 0 0; opacity:.85; font-size:13px; }
+    nav { margin-left:auto; display:flex; gap:8px; }
+    nav button { background:rgba(255,255,255,.15); color:#fff; border:0; padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:600; }
+    nav button.active { background:#fff; color:var(--brand); }
+    main { max-width:1280px; margin:20px auto; padding:0 16px; }
+    .layout { display:grid; grid-template-columns: 340px 1fr; gap:20px; }
+    .card { background:var(--card); border-radius:12px; padding:18px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+    label { display:block; font-size:12px; color:var(--muted); margin:10px 0 3px; }
+    input, select, textarea { width:100%; padding:8px 9px; border:1px solid #d0d5dd; border-radius:8px; font:inherit; font-size:14px; }
+    .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .checks { display:grid; grid-template-columns:1fr 1fr; gap:2px 8px; font-size:13px; }
+    .checks label { display:flex; gap:6px; align-items:center; margin:3px 0; color:var(--ink); font-size:13px; }
+    .checks input { width:auto; }
+    details summary { cursor:pointer; font-weight:600; font-size:13px; margin-top:14px; color:var(--brand); }
+    button.primary { margin-top:16px; width:100%; padding:11px; border:0; border-radius:8px; background:var(--brand); color:#fff; font-weight:600; cursor:pointer; font-size:15px; }
+    button.primary:disabled { opacity:.6; cursor:wait; }
+    #preview { width:100%; border-radius:8px; margin-top:10px; display:none; }
+    .verdict { border-radius:12px; padding:18px 22px; color:#fff; display:flex; align-items:center; gap:24px; }
+    .verdict.SUSPICIOUS { background:var(--sus); } .verdict.NOT_SUSPICIOUS { background:var(--neg); } .verdict.INDETERMINATE { background:var(--inad); }
+    .verdict .big { font-size:30px; font-weight:800; letter-spacing:.5px; }
+    .verdict .sub { opacity:.92; font-size:14px; margin-top:4px; }
+    .gauge { margin-left:auto; text-align:center; min-width:110px; }
+    .gauge .num { font-size:36px; font-weight:800; line-height:1; } .gauge .lbl { font-size:12px; opacity:.9; }
+    .action { background:#f4ebf7; border-left:4px solid var(--brand); padding:12px 14px; border-radius:6px; margin-top:14px; font-weight:600; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+    .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:12px; }
+    .stat { background:#f8f9fb; border-radius:8px; padding:10px 12px; font-size:14px; }
+    .stat b { display:block; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.4px; margin-bottom:2px; }
+    h3 { margin:0 0 8px; font-size:14px; color:var(--brand); text-transform:uppercase; letter-spacing:.4px; }
+    table { border-collapse:collapse; width:100%; font-size:13px; } td, th { padding:6px 8px; border-bottom:1px solid #eef0f3; text-align:left; } th { color:var(--muted); font-weight:500; }
+    .bar { height:8px; background:#eaecf0; border-radius:4px; overflow:hidden; } .bar > div { height:100%; background:var(--brand); }
+    .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; margin:2px 4px 2px 0; background:#eef0f3; }
+    .pill.red { background:#fee2e2; color:#991b1b; } .pill.green { background:#dcfce7; color:#166534; }
+    ul { padding-left:18px; margin:4px 0; } li { margin:3px 0; font-size:14px; }
+    .ok { color:var(--neg); } .no { color:var(--sus); } .unk { color:var(--inad); }
+    .explain { background:#f0f9ff; border-radius:8px; padding:12px; font-style:italic; }
+    .muted { color:var(--muted); font-size:12px; }
+    .empty { color:var(--muted); text-align:center; padding:80px 0; }
+    .error { color:var(--sus); }
+    .links a { margin-right:14px; color:var(--brand); font-weight:600; font-size:14px; }
+    .spinner { display:inline-block; width:16px; height:16px; border:2px solid #fff; border-right-color:transparent; border-radius:50%; animation:spin .8s linear infinite; vertical-align:-3px; margin-right:6px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .wl-row { cursor:pointer; } .wl-row:hover { background:#faf5fc; }
+    @media (max-width: 960px) { .layout, .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>VIScan</h1>
+    <p>AI-assisted interpretation of VIA cervical screening images</p>
+  </div>
+  <nav>
+    <button id="tab-screen" class="active">New screening</button>
+    <button id="tab-worklist">Review worklist</button>
+    <button id="tab-metrics">Performance</button>
+  </nav>
+</header>
+
+<main>
+  <div id="view-screen" class="layout">
+    <section class="card">
+      <form id="form">
+        <label for="image">VIA image (white light, 1 min after acetic acid)</label>
+        <input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp" required>
+        <img id="preview" alt="Preview">
+        <div class="row2">
+          <div><label>Patient ID</label><input name="patient_external_id" placeholder="SITE01-000123"></div>
+          <div><label>Age</label><input name="age" type="number" min="10" max="100"></div>
+        </div>
+        <div class="row2">
+          <div><label>HIV status</label><select name="hiv_status"><option value="unknown">Unknown</option><option value="negative">Negative</option><option value="positive">Positive</option></select></div>
+          <div><label>HPV test</label><select name="hpv_status"><option value="unknown">Not done</option><option value="negative">Negative</option><option value="positive">Positive</option></select></div>
+        </div>
+        <label>Symptoms</label>
+        <div class="checks">
+          <label><input type="checkbox" name="symptoms" value="postcoital_bleeding">Post-coital bleeding</label>
+          <label><input type="checkbox" name="symptoms" value="intermenstrual_bleeding">Intermenstrual bleeding</label>
+          <label><input type="checkbox" name="symptoms" value="postmenopausal_bleeding">Post-menopausal bleeding</label>
+          <label><input type="checkbox" name="symptoms" value="abnormal_discharge">Abnormal discharge</label>
+          <label><input type="checkbox" name="symptoms" value="pelvic_pain">Pelvic pain</label>
+          <label><input type="checkbox" name="symptoms" value="dyspareunia">Pain during sex</label>
+        </div>
+        <details>
+          <summary>More clinical history</summary>
+          <div class="row2">
+            <div><label>Pregnant</label><select name="pregnant"><option value="">Unknown</option><option value="false">No</option><option value="true">Yes</option></select></div>
+            <div><label>Parity</label><input name="parity" type="number" min="0" max="25"></div>
+          </div>
+          <div class="row2">
+            <div><label>Previously treated</label><select name="previously_treated"><option value="">Unknown</option><option value="false">No</option><option value="true">Yes</option></select></div>
+            <div><label>Smoker</label><select name="smoker"><option value="">Unknown</option><option value="false">No</option><option value="true">Yes</option></select></div>
+          </div>
+          <label>Previous screening result</label>
+          <select name="previous_screening_result"><option value="">None / unknown</option><option>VIA_NEGATIVE</option><option>VIA_POSITIVE</option><option>SUSPICIOUS_FOR_CANCER</option></select>
+          <div class="row2">
+            <div><label>HPV genotypes</label><input name="hpv_genotypes" placeholder="16, 18"></div>
+            <div><label>Contraception</label><input name="contraception"></div>
+          </div>
+          <div class="row2">
+            <div><label>Screening site</label><input name="site"></div>
+            <div><label>Screened by</label><input name="clinician_id"></div>
+          </div>
+          <label>Notes</label><textarea name="notes" rows="2"></textarea>
+          <label>API key (only if the server requires one)</label>
+          <input id="apikey" type="password" autocomplete="off">
+        </details>
+        <button id="submit" class="primary" type="submit">Interpret image</button>
+      </form>
+    </section>
+    <section id="result"><div class="card empty">Upload a VIA image to get an AI interpretation.</div></section>
+  </div>
+
+  <div id="view-worklist" class="card" style="display:none"></div>
+  <div id="view-metrics" class="card" style="display:none"></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const apiKey = $("apikey");
+apiKey.value = localStorage.getItem("viscan_api_key") || "";
+apiKey.addEventListener("change", () => localStorage.setItem("viscan_api_key", apiKey.value));
+const headers = () => apiKey.value ? { "X-API-Key": apiKey.value } : {};
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nice = (s) => esc(String(s ?? "-").replaceAll("_", " "));
+const list = (items) => items && items.length ? `<ul>${items.map(i => `<li>${esc(i)}</li>`).join("")}</ul>` : `<p class="muted">None</p>`;
+const pct = (v) => Math.round((v || 0) * 100);
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { ...(opts.headers || {}), ...headers() } });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+for (const name of ["screen", "worklist", "metrics"]) {
+  $("tab-" + name).addEventListener("click", () => {
+    for (const n of ["screen", "worklist", "metrics"]) {
+      $("view-" + n).style.display = n === name ? "" : "none";
+      $("tab-" + n).classList.toggle("active", n === name);
+    }
+    if (name === "worklist") loadWorklist();
+    if (name === "metrics") loadMetrics();
+  });
+}
+
+$("image").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) { $("preview").src = URL.createObjectURL(f); $("preview").style.display = "block"; }
+});
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("submit");
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Analysing (up to ~60 s)...';
+  try {
+    const data = await api("/api/v1/interpret", { method: "POST", body: new FormData(e.target) });
+    render(data);
+  } catch (err) {
+    $("result").innerHTML = `<div class="card error">${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "Interpret image";
+  }
+});
+
+function render(d) {
+  const v = d.verdict, r = d.recommendation, f = d.findings || {}, ia = d.image_assessment, s = d.swede;
+  const flags = Object.entries(d.cancer_red_flags || {}).filter(([, x]) => x).map(([k]) => k);
+  const hist = d.histology_likelihood;
+  $("result").innerHTML = `
+  <div class="verdict ${v.screening_verdict}">
+    <div>
+      <div class="big">${nice(v.screening_verdict)}</div>
+      <div class="sub">${esc(v.label)}</div>
+      <div class="sub">VIA result: <b>${nice(v.via_result)}</b> &middot; AI confidence ${pct(v.confidence)}% &middot; urgency <b>${esc(r.urgency)}</b></div>
+    </div>
+    <div class="gauge"><div class="num">${v.risk_score ?? "-"}</div><div class="lbl">risk index<br>${nice(v.suspicion_level)}</div></div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="action">${esc(r.action)}</div>
+    <div class="grid3">
+      <div class="stat"><b>Follow-up due</b>${esc(d.follow_up_due || "-")}</div>
+      <div class="stat"><b>Ablation eligible</b>${r.ablation_eligible === null ? "n/a" : r.ablation_eligible ? "Yes" : "No"}</div>
+      <div class="stat"><b>History</b>${nice(d.history.trend)}</div>
+      <div class="stat"><b>Image type</b>${nice(ia.image_modality)}</div>
+      <div class="stat"><b>Transformation zone</b>${nice(ia.transformation_zone_type)} (SCJ ${nice(ia.scj_visibility)})</div>
+      <div class="stat"><b>Cervix involved</b>${f.cervix_area_involved_percent ?? "-"}%${f.extends_into_canal ? " &middot; into canal" : ""}</div>
+    </div>
+    <p class="links" style="margin-top:14px"><a href="${d.links.report}" target="_blank">Open printable report</a><a href="${d.links.overlay}" target="_blank">Annotated image</a></p>
+  </div>
+
+  <div class="grid">
+    <div class="card"><h3>Annotated image</h3><img src="${d.links.overlay}" style="width:100%;border-radius:8px" alt="Annotated image"></div>
+    <div class="card">
+      <h3>Key observations</h3>${list(d.clinical_summary.key_observations)}
+      <h3 style="margin-top:14px">Rationale</h3><p style="font-size:14px">${esc(d.clinical_summary.rationale)}</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Lesions (${d.lesions.length})</h3>
+    ${d.lesions.length ? `<table><tr><th>#</th><th>Clock</th><th>Area</th><th>Density</th><th>Margins</th><th>Surface</th><th>Vessels</th><th>SCJ / canal</th></tr>
+      ${d.lesions.map((l, i) => `<tr><td>${i + 1}</td><td>${l.clock_start}-${l.clock_end}</td><td>${l.area_percent}%</td><td>${nice(l.density)}</td><td>${nice(l.margins)}</td><td>${nice(l.surface)}</td><td>${nice(l.vessel_pattern)}</td><td>${l.touches_scj ? "touches SCJ" : "-"}${l.extends_into_canal ? ", into canal" : ""}</td></tr>
+      <tr><td></td><td colspan="7" class="muted">${esc(l.description)}</td></tr>`).join("")}</table>` : `<p class="muted">No lesions identified.</p>`}
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Modified Swede score: ${s.total}/${s.max}</h3>
+      <table>${Object.entries(s.components).map(([k, x]) => `<tr><th>${nice(k)}</th><td><div class="bar"><div style="width:${x * 50}%"></div></div></td><td>${x}/2</td></tr>`).join("")}</table>
+      <p class="muted">${esc(s.interpretation)}</p>
+    </div>
+    <div class="card">
+      <h3>AI-estimated histology likelihood</h3>
+      ${hist ? `<table>${Object.entries(hist).map(([k, x]) => `<tr><th>${nice(k)}</th><td style="width:55%"><div class="bar"><div style="width:${pct(x)}%"></div></div></td><td>${pct(x)}%</td></tr>`).join("")}</table>` : `<p class="muted">Not available</p>`}
+      <p class="muted">Estimate only; histology is the reference standard.</p>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Treatment eligibility (WHO)</h3>
+      ${d.treatment_eligibility.checklist.length ? `<table>${d.treatment_eligibility.checklist.map(c => `<tr><td class="${c.met ? "ok" : c.met === null ? "unk" : "no"}">${c.met ? "&#10004;" : c.met === null ? "?" : "&#10008;"}</td><td>${esc(c.criterion)}<div class="muted">${esc(c.detail)}</div></td></tr>`).join("")}</table>` : `<p class="muted">Not assessable</p>`}
+      ${r.reasons.length ? `<h3 style="margin-top:12px">Reasons</h3>${list(r.reasons)}` : ""}
+    </div>
+    <div class="card">
+      <h3>Findings</h3>
+      <div>${flags.length ? flags.map(x => `<span class="pill red">${nice(x)}</span>`).join("") : `<span class="pill green">No cancer red flags</span>`}</div>
+      <div style="margin-top:8px">${(d.benign_findings || []).filter(x => x !== "none").map(x => `<span class="pill">${nice(x)}</span>`).join("") || `<span class="muted">No benign findings noted</span>`}</div>
+      <h3 style="margin-top:12px">Differential</h3>
+      ${(d.differential || []).length ? `<ul>${d.differential.map(x => `<li>${esc(x.diagnosis)} <span class="muted">(${esc(x.likelihood)})</span></li>`).join("")}</ul>` : `<p class="muted">-</p>`}
+      <h3 style="margin-top:12px">Risk index breakdown</h3>
+      ${d.risk_index.breakdown.length ? `<table>${d.risk_index.breakdown.map(b => `<tr><td>${esc(b.factor)}</td><td>+${b.points}</td></tr>`).join("")}</table>` : `<p class="muted">n/a</p>`}
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Clinician checklist</h3>${list(d.clinical_summary.clinician_checklist)}
+      ${r.flags.length ? `<h3 style="margin-top:12px">Flags</h3>${list(r.flags)}` : ""}
+    </div>
+    <div class="card">
+      <h3>For the patient</h3>
+      <div class="explain">${esc(d.clinical_summary.patient_explanation || "-")}</div>
+      <h3 style="margin-top:12px">Counselling points</h3>${list(d.clinical_summary.counselling_points)}
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Clinician review</h3>
+    <form id="review" class="row2" style="align-items:end">
+      <div><label>Your VIA result</label><select name="via_result">${["VIA_NEGATIVE","VIA_POSITIVE","SUSPICIOUS_FOR_CANCER","INADEQUATE"].map(x => `<option ${x === v.via_result ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+      <div><label>Clinician ID</label><input name="clinician_id" required></div>
+      <div style="grid-column:1/3"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div style="grid-column:1/3"><button class="primary" type="submit" style="margin-top:4px">Save clinician review</button><p id="review-msg" style="font-size:13px"></p></div>
+    </form>
+    <p class="muted">Engine: ${esc(d.engine.name)} (${esc(d.engine.model)}) &middot; ${(d.engine.latency_ms / 1000).toFixed(1)} s &middot; ${esc(d.disclaimer)}</p>
+  </div>`;
+
+  $("review").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const out = await api(d.links.annotate, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(new FormData(e.target))),
+      });
+      $("review-msg").textContent = out.agrees_with_ai ? "Saved - agrees with AI." : "Saved - disagreement recorded; this case will help calibrate the model.";
+    } catch (err) { $("review-msg").textContent = err.message; }
+  });
+}
+
+async function loadWorklist() {
+  const view = $("view-worklist");
+  view.innerHTML = "Loading...";
+  try {
+    const rows = await api("/api/v1/worklist?status=pending");
+    view.innerHTML = `<h3>Cases awaiting clinician review (${rows.length})</h3>` + (rows.length ? `<table>
+      <tr><th>#</th><th>Patient</th><th>Verdict</th><th>VIA result</th><th>Risk</th><th>Urgency</th><th>Follow-up due</th><th>Screened</th></tr>
+      ${rows.map(x => `<tr class="wl-row" data-id="${x.interpretation_id}"><td>${x.interpretation_id}</td><td>${esc(x.patient_external_id || "-")}</td>
+        <td><span class="pill ${x.screening_verdict === "SUSPICIOUS" ? "red" : x.screening_verdict === "NOT_SUSPICIOUS" ? "green" : ""}">${nice(x.screening_verdict)}</span></td>
+        <td>${nice(x.via_result)}</td><td>${x.risk_score ?? "-"}</td><td>${esc(x.urgency)}</td><td>${esc(x.follow_up_due || "-")}</td><td>${esc((x.created_at || "").slice(0, 16).replace("T", " "))}</td></tr>`).join("")}
+      </table>` : `<p class="muted">Nothing pending.</p>`);
+    view.querySelectorAll(".wl-row").forEach(tr => tr.addEventListener("click", async () => {
+      const data = await api(`/api/v1/interpretations/${tr.dataset.id}`);
+      $("tab-screen").click();
+      render(data);
+    }));
+  } catch (err) { view.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+}
+
+async function loadMetrics() {
+  const view = $("view-metrics");
+  view.innerHTML = "Loading...";
+  try {
+    const m = await api("/api/v1/metrics");
+    const h = m.vs_histology_cin2_plus, c = m.clinician_agreement;
+    const fmt = (x) => x === null || x === undefined ? "-" : (typeof x === "number" && x <= 1 ? pct(x) + "%" : x);
+    view.innerHTML = `<h3>Programme performance</h3>
+      <div class="grid3">
+        <div class="stat"><b>Total interpretations</b>${m.total_interpretations}</div>
+        <div class="stat"><b>By verdict</b>${Object.entries(m.by_verdict).map(([k, x]) => `${nice(k)}: ${x}`).join("<br>") || "-"}</div>
+        <div class="stat"><b>Review status</b>${Object.entries(m.by_review_status).map(([k, x]) => `${nice(k)}: ${x}`).join("<br>") || "-"}</div>
+        <div class="stat"><b>Clinician agreement</b>${fmt(c.agreement_rate)} of ${c.reviewed} reviewed &middot; kappa ${c.cohens_kappa ?? "-"}</div>
+        <div class="stat"><b>Sensitivity CIN2+</b>${fmt(h.sensitivity)} (${h.cases_with_reference} with histology)</div>
+        <div class="stat"><b>Specificity CIN2+</b>${fmt(h.specificity)}</div>
+        <div class="stat"><b>Average risk index</b>${m.average_risk_score ?? "-"}</div>
+      </div>`;
+  } catch (err) { view.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+}
+</script>
+</body>
+</html>

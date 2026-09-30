@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>VIScan report #{{ r.interpretation_id }}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#1d2433; max-width:900px; margin:24px auto; padding:0 16px; font-size:14px; }
+    h1 { font-size:20px; margin:0; } h2 { font-size:15px; border-bottom:1px solid #e4e7ec; padding-bottom:4px; margin-top:22px; }
+    .verdict { padding:14px 18px; border-radius:10px; color:#fff; margin:16px 0; }
+    .SUSPICIOUS { background:#dc2626; } .NOT_SUSPICIOUS { background:#16a34a; } .INDETERMINATE { background:#6b7280; }
+    .verdict b { font-size:22px; display:block; }
+    table { border-collapse:collapse; width:100%; } td, th { border:1px solid #e4e7ec; padding:6px 8px; text-align:left; vertical-align:top; }
+    th { background:#f8f9fb; width:32%; font-weight:600; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    img { width:100%; border-radius:8px; }
+    .muted { color:#667085; font-size:12px; }
+    .ok { color:#16a34a; } .no { color:#dc2626; } .unk { color:#6b7280; }
+    @media print { .noprint { display:none; } body { margin:0; } }
+  </style>
+</head>
+<body>
+  <button class="noprint" onclick="window.print()" style="float:right">Print / Save PDF</button>
+  <h1>VIScan - AI-assisted VIA interpretation report</h1>
+  <div class="muted">Report #{{ r.interpretation_id }} &middot; {{ r.created_at }} &middot; engine {{ r.engine.name }} ({{ r.engine.model }})</div>
+
+  <div class="verdict {{ r.verdict.screening_verdict }}">
+    <b>{{ r.verdict.screening_verdict.replace('_', ' ') }}</b>
+    {{ r.verdict.label }}<br>
+    VIA result: {{ r.verdict.via_result }} &middot; AI confidence {{ (r.verdict.confidence * 100) | round | int }}% &middot;
+    risk index {{ r.verdict.risk_score if r.verdict.risk_score is not none else 'n/a' }} ({{ r.verdict.suspicion_level }})
+  </div>
+
+  <h2>Recommended action</h2>
+  <p><b>{{ r.recommendation.action }}</b><br>Urgency: {{ r.recommendation.urgency }} &middot; Follow-up due: {{ r.follow_up_due or 'n/a' }}</p>
+
+  <div class="grid">
+    <div>
+      <h2>Annotated image</h2>
+      <img src="{{ r.links.overlay }}" alt="Annotated VIA image">
+    </div>
+    <div>
+      <h2>Patient &amp; visit</h2>
+      <table>
+        <tr><th>Patient ID</th><td>{{ patient.external_id if patient else 'anonymous' }}</td></tr>
+        {% if r.visit %}
+        <tr><th>Age</th><td>{{ r.visit.age_at_visit or '-' }}</td></tr>
+        <tr><th>HIV / HPV</th><td>{{ r.visit.hiv_status or 'unknown' }} / {{ r.visit.hpv_status or 'unknown' }}</td></tr>
+        <tr><th>Pregnant</th><td>{{ r.visit.pregnant if r.visit.pregnant is not none else '-' }}</td></tr>
+        <tr><th>Symptoms</th><td>{{ r.visit.symptoms | join(', ') or 'none reported' }}</td></tr>
+        <tr><th>Previously treated</th><td>{{ r.visit.previously_treated if r.visit.previously_treated is not none else '-' }}</td></tr>
+        {% endif %}
+        <tr><th>Screening history</th><td>{{ r.history.trend.replace('_', ' ') }}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>Key observations</h2>
+  <ul>{% for o in r.clinical_summary.key_observations %}<li>{{ o }}</li>{% else %}<li>-</li>{% endfor %}</ul>
+  <p>{{ r.clinical_summary.rationale }}</p>
+
+  <h2>Lesions</h2>
+  {% if r.lesions %}
+  <table>
+    <tr><th style="width:auto">#</th><th style="width:auto">Clock</th><th style="width:auto">Area</th><th style="width:auto">Density</th><th style="width:auto">Margins / surface</th><th style="width:auto">Vessels</th><th style="width:auto">SCJ / canal</th></tr>
+    {% for l in r.lesions %}
+    <tr><td>{{ loop.index }}</td><td>{{ l.clock_start }}-{{ l.clock_end }}</td><td>{{ l.area_percent }}%</td><td>{{ l.density }}</td>
+        <td>{{ l.margins }} / {{ l.surface }}</td><td>{{ l.vessel_pattern.replace('_', ' ') }}</td>
+        <td>{{ 'touches SCJ' if l.touches_scj else '-' }}{{ ', into canal' if l.extends_into_canal else '' }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p>No lesions identified.</p>{% endif %}
+
+  <div class="grid">
+    <div>
+      <h2>Modified Swede score: {{ r.swede.total }}/{{ r.swede.max }}</h2>
+      <table>{% for k, v in r.swede.components.items() %}<tr><th>{{ k.replace('_', ' ') }}</th><td>{{ v }}/2</td></tr>{% endfor %}</table>
+      <p class="muted">{{ r.swede.interpretation }}. {{ r.swede.note }}</p>
+    </div>
+    <div>
+      <h2>AI-estimated histology likelihood</h2>
+      {% if r.histology_likelihood %}
+      <table>{% for k, v in r.histology_likelihood.items() %}<tr><th>{{ k.replace('_', ' ') }}</th><td>{{ (v * 100) | round | int }}%</td></tr>{% endfor %}</table>
+      {% else %}<p>-</p>{% endif %}
+    </div>
+  </div>
+
+  <h2>Treatment eligibility (WHO ablation criteria)</h2>
+  <table>
+    {% for c in r.treatment_eligibility.checklist %}
+    <tr><th>{{ c.criterion }}</th><td class="{{ 'ok' if c.met else 'unk' if c.met is none else 'no' }}">{{ 'Met' if c.met else 'Unknown' if c.met is none else 'Not met' }} {{ c.detail }}</td></tr>
+    {% else %}<tr><td>Not assessable</td></tr>{% endfor %}
+  </table>
+
+  <div class="grid">
+    <div>
+      <h2>Red flags &amp; other findings</h2>
+      <p>Red flags: {% set flags = [] %}{% for k, v in (r.cancer_red_flags or {}).items() if v %}{% set _ = flags.append(k.replace('_', ' ')) %}{% endfor %}{{ flags | join(', ') or 'none' }}</p>
+      <p>Benign findings: {{ (r.benign_findings or []) | join(', ') or 'none' }}</p>
+      <p>Differential: {% for d in r.differential or [] %}{{ d.diagnosis }} ({{ d.likelihood }}){{ ', ' if not loop.last }}{% else %}-{% endfor %}</p>
+    </div>
+    <div>
+      <h2>Risk index breakdown</h2>
+      <table>{% for b in r.risk_index.breakdown %}<tr><th>{{ b.factor }}</th><td>+{{ b.points }}</td></tr>{% else %}<tr><td>n/a</td></tr>{% endfor %}</table>
+    </div>
+  </div>
+
+  <h2>Clinician checklist</h2>
+  <ul>{% for c in r.clinical_summary.clinician_checklist %}<li>&#9744; {{ c }}</li>{% endfor %}</ul>
+
+  <h2>Counselling</h2>
+  <p><i>{{ r.clinical_summary.patient_explanation }}</i></p>
+  <ul>{% for c in r.clinical_summary.counselling_points %}<li>{{ c }}</li>{% endfor %}</ul>
+
+  {% if r.recommendation.flags %}<h2>Flags</h2><ul>{% for f in r.recommendation.flags %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+
+  <h2>Clinician review</h2>
+  {% for a in annotations %}
+  <p>{{ a.clinician_id }}: <b>{{ a.via_result }}</b> ({{ 'agrees' if a.agrees_with_ai else 'disagrees' }} with AI) {{ a.notes or '' }} <span class="muted">{{ a.created_at }}</span></p>
+  {% else %}
+  <p>Pending. Clinician: ____________________ &nbsp; Result: ____________________ &nbsp; Signature: ____________</p>
+  {% endfor %}
+
+  <p class="muted">{{ r.disclaimer }}</p>
+</body>
+</html>

@@ -1,0 +1,14 @@
+services:
+  viscan:
+    build: .
+    image: viscan:latest
+    ports:
+      - "5050:5050"
+    env_file:
+      - .env
+    volumes:
+      - viscan-data:/data
+    restart: unless-stopped
+
+volumes:
+  viscan-data:
