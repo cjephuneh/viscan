@@ -1,0 +1,2 @@
+tests/test_analysis_queue.py::test_stale_processing_job_is_dropped_after_the_last_attempt
+passed
