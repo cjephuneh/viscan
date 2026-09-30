@@ -36,7 +36,7 @@ Development uses the remote PostgreSQL host configured via `DB_*` in `.env` (hos
 
 The shared database already contains `cervical_avatar_reports`. These phases add the VISCAN tables beside it and leave that table unchanged.
 
-`migrations/versions/001_initial_schema.py` is a draft that creates every VISCAN table in one revision. It has not been applied: the real database has no `alembic_version` table. Replace that draft with the ten-phase chain below before the first `flask db upgrade`.
+The chain below is the schema history. Apply it with `flask db upgrade`.
 
 ### How each phase is committed
 
