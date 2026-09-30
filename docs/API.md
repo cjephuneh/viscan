@@ -27,6 +27,7 @@ recommendation. Every result is stored and must be confirmed by a clinician.
    - [Original image](#get-imagesidfile)
    - [Clinician review](#post-interpretationsidannotations)
    - [Review worklist](#get-worklist)
+   - [Past screenings](#get-screenings)
    - [Diagnosis records](#post-patientsiddiagnoses)
    - [Outcomes](#post-patientsidoutcomes)
    - [Patient record](#get-patientsid)
@@ -38,6 +39,7 @@ recommendation. Every result is stored and must be confirmed by a clinician.
    - [Refer to a partner hospital](#post-interpretationsidreferrals)
    - [Send results by SMS / WhatsApp](#post-interpretationsidnotifications)
    - [Pre-screening intake with the AI avatar](#pre-screening-intake-ai-avatar)
+   - [Clinical coach avatar](#clinical-coach-ai-avatar)
 5. [How a result is produced](#how-a-result-is-produced)
 6. [Data model](#data-model)
 7. [Configuration](#configuration)
@@ -355,6 +357,11 @@ clinician checklist, counselling text and a clinician sign-off section. Use the 
 
 The original uploaded image.
 
+### `GET /images/{id}/thumb.jpg`
+
+A JPEG preview no larger than 320 px, generated on first request and cached under
+`UPLOAD_DIR/thumbs/`. Used by the past screenings list.
+
 ---
 
 ### `POST /interpretations/{id}/annotations`
@@ -409,6 +416,53 @@ suspicious, then by risk score (highest first), then oldest first.
     "review_status": "pending",
     "links": { "self": "/api/v1/interpretations/1", "report": "/api/v1/interpretations/1/report" } }
 ]
+```
+
+---
+
+### `GET /screenings`
+
+History of every screening (AI reading) with what happened next: the clinician's confirmed
+result, referral, messages sent and coaching sessions. Newest first by default, paginated.
+Invalid parameters return `400`.
+
+| Query | Default | Values |
+|---|---|---|
+| `q` | — | Search patient ID, intake name or code, site; `#12` or `12` also matches reading 12 |
+| `verdict` | all | `SUSPICIOUS`, `NOT_SUSPICIOUS`, `INDETERMINATE` |
+| `status` | all | `pending`, `reviewed`, `disputed` |
+| `from` / `to` | — | `YYYY-MM-DD` (inclusive) |
+| `referred` | — | `1` = only referred screenings |
+| `overdue` | — | `1` = only screenings whose follow-up date has passed |
+| `sort` | `newest` | `newest`, `oldest`, `risk` |
+| `page` / `per_page` | 1 / 20 | `per_page` 1-100 |
+
+`final_via_result` is the clinician's latest read when there is one (`result_source:
+"clinician"`), otherwise the AI's (`"ai"`). `summary` covers all screenings, not only the
+current filter.
+
+```json
+{
+  "items": [
+    { "interpretation_id": 10, "created_at": "...", "patient_external_id": "INT-KLLWH",
+      "patient_name": "Aline Uwase", "intake_id": 3, "age": 38, "hiv_status": "positive",
+      "symptoms": [], "site": "Kigali HC", "screening_verdict": "SUSPICIOUS",
+      "via_result": "SUSPICIOUS_FOR_CANCER", "final_via_result": "SUSPICIOUS_FOR_CANCER",
+      "final_is_suspicious": true, "result_source": "clinician", "confirmed_by": "nurse-07",
+      "agrees_with_ai": true, "clinician_notes": null, "risk_score": 100, "suspicion_level": "very_high",
+      "swede_score": 8, "confidence": 0.71, "lesion_count": 1, "urgency": "urgent",
+      "action": "Do NOT ablate. Urgent referral ...", "follow_up_due": "2026-10-30",
+      "follow_up_overdue": false, "review_status": "reviewed",
+      "referral": { "hospital": "CHUK", "status": "sent", "urgency": "urgent" },
+      "notifications": 1, "coach_sessions": 0,
+      "links": { "self": "...", "thumbnail": "/api/v1/images/10/thumb.jpg", "image": "...",
+                 "overlay": "...", "report": "..." } }
+  ],
+  "total": 10, "page": 1, "per_page": 20, "pages": 1,
+  "summary": { "total": 10, "suspicious": 4, "not_suspicious": 1, "indeterminate": 5,
+               "pending_review": 7, "reviewed": 3, "disputed": 0, "referred": 1,
+               "follow_up_overdue": 0, "agreement_rate": 1.0, "last_screening_at": "..." }
+}
 ```
 
 ---
@@ -662,6 +716,66 @@ unanswered questions).
 
 ---
 
+<a id="clinical-coach-ai-avatar"></a>
+## Clinical coach (AI avatar)
+
+**Kezia** is a second Anam avatar that teaches clinicians how to understand and act on a result.
+Each lesson gets a short-lived session token whose system prompt contains a brief of the reading:
+verdict, image quality, findings, lesions, Swede score, risk-index breakdown, ablation checklist,
+recommendation, visit context, the patient's check-in flags and any clinician read. Without an
+`interpretation_id` it is a practice lesson with invented, clearly labelled cases.
+
+| Tool | Event `type` | What the page does |
+|---|---|---|
+| `highlight_section` | `highlight` | Scrolls to and glows `[data-coach=section]`: `verdict`, `overlay`, `findings`, `lesions`, `observations`, `histology`, `eligibility`, `flags`, `patient_explanation`, `next_step`, `record` |
+| `point_to_lesion` | `lesion` | Lights up `clock_start`-`clock_end` on the cervix clock face |
+| `show_teaching_card` | `card` | Shows a card: `acetowhite_change`, `transformation_zone`, `squamocolumnar_junction`, `swede_score`, `risk_index`, `ablation_eligibility`, `thermal_ablation`, `cryotherapy`, `leep_referral`, `cancer_red_flags`, `counselling`, `follow_up_intervals`, `hiv_and_screening`, `inadequate_image`, `ai_limits` |
+| `add_action_step` | `action_step` | Appends `{step, why}` to the action plan (the clinician ticks steps: `action_done` `{index, done}`) |
+| `ask_quiz` | `quiz_asked` | Shows `{question, options[2-4], correct_index, explanation}`; the clinician's click sends `quiz_answer` `{chosen_index}` |
+| `start_roleplay` / `end_roleplay` | `roleplay_start` / `roleplay_end` | The coach plays the patient; feedback `{strengths[], improve}` |
+| `note_learning` | `learning` | Adds `{topic, summary}` to the training record |
+| `finish_lesson` | `finish` | Saves `summary`; returns the quiz score |
+| (browser) | `transcript` | `messages: [{role, content}]` |
+
+### `GET /coach/persona`
+
+`{"available": true, "name": "Kezia", "image_url": "..."}`.
+
+### `POST /coach/sessions`
+
+`{"interpretation_id": 9, "clinician_id": "nurse-07"}` (both optional) → `201` with the session.
+Unknown interpretation → `400`.
+
+### `POST /coach/sessions/{id}/token`
+
+`{"session_token": "...", "persona": {"name": "Kezia", "image_url": "..."}}`, or `503` when the
+avatar is unavailable.
+
+### `POST /coach/sessions/{id}/events`
+
+`{"type": "quiz_answer", "data": {"chosen_index": 1}, "anam_session_id": "optional"}` →
+`{"message": "Correct.", "session": {...}}`. Invalid types, sections, cards or quizzes → `400`.
+
+### `GET /coach/sessions/{id}` · `GET /coach/sessions`
+
+One lesson (`?transcript=1` for the conversation) or the training record, newest first, filtered
+by `clinician_id`, `interpretation_id`, `limit`.
+
+```json
+{
+  "id": 3, "interpretation_id": 9, "clinician_id": "nurse-07", "status": "completed",
+  "topics": [{"topic": "Swede score", "summary": "...", "at": "..."}],
+  "quiz": [{"question": "Can you ablate a TZ type 3?", "options": ["Yes", "No"], "correct_index": 1,
+            "explanation": "...", "chosen_index": 1, "correct": true, "at": "..."}],
+  "score": {"asked": 1, "answered": 1, "correct": 1},
+  "action_plan": [{"step": "Refer for LEEP", "why": "TZ type 3", "done": false}],
+  "roleplays": [{"scenario": "Telling Grace her result", "strengths": ["Calm tone"], "improve": "Check understanding"}],
+  "summary": "...", "created_at": "...", "ended_at": "..."
+}
+```
+
+---
+
 ## How a result is produced
 
 1. **Validation & storage** — image type/size checked, SHA-256 computed, file stored.
@@ -701,6 +815,7 @@ confidence (demo/testing only).
 | `referral` | Referral of a screen to a partner hospital |
 | `notification` | Result messages sent to patients (SMS / WhatsApp; currently simulated) |
 | `intake_session` | Pre-screening conversation with the AI avatar: details, answers, feelings, concerns, questions, topics, transcript, check-in code |
+| `coach_session` | Clinician lesson with the AI coach: topics, quiz answers and score, action plan, role-play feedback, transcript |
 
 Tables are created automatically on startup.
 
@@ -727,4 +842,8 @@ Tables are created automatically on startup.
 | `ANAM_LLM_ID` | GPT 4.1 Mini | Anam LLM for the intake conversation; needs reliable tool calling |
 | `ANAM_MAX_SESSION_SECONDS` | `900` | Hard cap per avatar session |
 | `ANAM_BASE_URL` | `https://api.anam.ai/v1` | Anam API base |
+| `ANAM_COACH_NAME` | `Kezia` | Coach display name |
+| `ANAM_COACH_AVATAR_ID` | Kezia's avatar | Anam avatar for the clinical coach |
+| `ANAM_COACH_VOICE_ID` | Bukola (warm, clear) | Anam voice for the coach |
+| `ANAM_COACH_AVATAR_MODEL` | `cara-4` | Avatar model |
 | `SEED_DEMO_PARTNERS` | on | Seed demo partner hospitals when the table is empty |

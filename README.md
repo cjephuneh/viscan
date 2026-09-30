@@ -35,7 +35,9 @@ npm run dev                 # http://localhost:3000
 npm test
 ```
 - `/` — Patient welcome screen featuring Mia, an Anam AI avatar guiding patients through intake and breathing exercises.
-- `/screening` — Clinician workstation for review, AI diagnostic confirmation, and assessment.
+- `/screening` — Clinician workstation for review, AI diagnostic confirmation, and assessment. "Walk me through this with Kezia" docks the AI clinical coach next to any reading.
+- `/screenings` — Past screenings: every AI reading with the confirmed result, risk, follow-up date and whether the patient was referred, messaged or used for coaching. Search by patient ID, name, site or `#reading`, filter by verdict, review status, dates, referred or overdue, and sort by date or risk. Expand a row for the annotated image, the recommendation and links to the report, care page and a Kezia lesson on that case (`/learn?case=<id>`).
+- `/learn` — Training with Kezia, an Anam AI clinical coach: pick a past reading or a practice lesson; she highlights parts of the result, traces lesions on a cervix clock face, builds an action plan, quizzes you (scored) and role-plays the patient so you can rehearse counselling. Lessons are kept as a training record.
 - `/care/{id}` — Care map, nearby pharmacies from OpenStreetMap, and partner hospital referrals.
 
 ### 2. Core Backend (`backend/`)

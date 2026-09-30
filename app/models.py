@@ -400,6 +400,48 @@ class IntakeSession(db.Model):
         return data
 
 
+class CoachSession(db.Model):
+    """A clinician's lesson with the AI coach, optionally about one interpretation."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    interpretation_id = db.Column(db.Integer, db.ForeignKey("ai_interpretation.id"), index=True)
+    clinician_id = db.Column(db.String(64), index=True)
+    status = db.Column(db.String(16), default="active", index=True)
+    anam_session_id = db.Column(db.String(64))
+    topics = db.Column(db.JSON, default=list)
+    quiz = db.Column(db.JSON, default=list)
+    action_plan = db.Column(db.JSON, default=list)
+    roleplays = db.Column(db.JSON, default=list)
+    summary = db.Column(db.Text)
+    transcript = db.Column(db.JSON, default=list)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+    ended_at = db.Column(db.DateTime(timezone=True))
+
+    def score(self) -> dict:
+        answered = [q for q in self.quiz or [] if q.get("chosen_index") is not None]
+        return {"asked": len(self.quiz or []), "answered": len(answered),
+                "correct": sum(1 for q in answered if q.get("correct"))}
+
+    def to_dict(self, include_transcript: bool = False):
+        data = {
+            "id": self.id,
+            "interpretation_id": self.interpretation_id,
+            "clinician_id": self.clinician_id,
+            "status": self.status,
+            "topics": self.topics or [],
+            "quiz": self.quiz or [],
+            "score": self.score(),
+            "action_plan": self.action_plan or [],
+            "roleplays": self.roleplays or [],
+            "summary": self.summary,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "ended_at": self.ended_at.isoformat() if self.ended_at else None,
+        }
+        if include_transcript:
+            data["transcript"] = self.transcript or []
+        return data
+
+
 class DiagnosisRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"), nullable=False)

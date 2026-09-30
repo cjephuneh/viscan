@@ -7,10 +7,12 @@ from flask import Blueprint, Response, current_app, jsonify, render_template, re
 
 from .models import (
     DIAGNOSIS_METHODS, DIAGNOSIS_RESULTS, HIV_STATUSES, HPV_STATUSES, SCREENING_VERDICTS, SYMPTOMS,
-    TREATMENTS, VIA_RESULTS, AIInterpretation, ClinicianAnnotation, DiagnosisRecord, IntakeSession, Notification,
+    TREATMENTS, VIA_RESULTS, AIInterpretation, ClinicianAnnotation, CoachSession, DiagnosisRecord, IntakeSession, Notification,
     Outcome, PartnerHospital, Patient, Referral, ViaImage, db,
 )
 from .services.avatar import AvatarUnavailable, create_session_token, fetch_persona
+from .services import coach
+from .services.history import HistoryError, list_screenings
 from .services.care import compose_message, final_result, suggested_supplies
 from .services.intake import IntakeError, apply_event, create_intake, intake_payload
 from .services.metrics import compute_metrics
@@ -28,6 +30,8 @@ class BadRequest(ValueError):
 @api_bp.errorhandler(BadRequest)
 @api_bp.errorhandler(PipelineError)
 @api_bp.errorhandler(IntakeError)
+@api_bp.errorhandler(coach.CoachError)
+@api_bp.errorhandler(HistoryError)
 def _bad_request(exc):
     return jsonify(error=str(exc)), 400
 
@@ -229,6 +233,30 @@ def worklist():
 def get_image_file(image_id):
     image = _get_or_404(ViaImage, image_id)
     return send_from_directory(current_app.config["UPLOAD_DIR"], image.filename, mimetype=image.mime_type)
+
+
+@api_bp.get("/images/<int:image_id>/thumb.jpg")
+def get_image_thumbnail(image_id):
+    """Small JPEG preview (max 320 px), cached next to the uploads."""
+    from PIL import Image
+
+    image = _get_or_404(ViaImage, image_id)
+    upload_dir = Path(current_app.config["UPLOAD_DIR"])
+    thumb = upload_dir / "thumbs" / f"{image.id}.jpg"
+    if not thumb.exists():
+        thumb.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(upload_dir / image.filename) as img:
+            img = img.convert("RGB")
+            img.thumbnail((320, 320))
+            img.save(thumb, "JPEG", quality=80)
+    return send_from_directory(thumb.parent, thumb.name, mimetype="image/jpeg", max_age=86400)
+
+
+@api_bp.get("/screenings")
+def screenings():
+    """Past screenings, newest first. Filters: q, verdict, status, from, to, referred, overdue;
+    sort (newest, oldest, risk); page, per_page. Includes headline totals in 'summary'."""
+    return jsonify(list_screenings(request.args))
 
 
 @api_bp.post("/interpretations/<int:interp_id>/annotations")
@@ -530,6 +558,67 @@ def intake_event(intake_id):
     message = apply_event(intake, body.get("type"), body.get("data") or {})
     db.session.commit()
     return jsonify(message=message, intake=intake_payload(intake))
+
+
+@api_bp.get("/coach/persona")
+def coach_persona():
+    """Public details of the clinical coach avatar and whether it can be started."""
+    try:
+        persona = coach.coach_persona(current_app.config)
+    except AvatarUnavailable as exc:
+        current_app.logger.warning("Coach unavailable: %s", exc)
+        return jsonify(available=False, name=current_app.config.get("ANAM_COACH_NAME") or "Kezia", image_url=None)
+    return jsonify(available=bool(current_app.config.get("ANAM_API_KEY")), **persona)
+
+
+@api_bp.post("/coach/sessions")
+def start_coach_session():
+    """Start a lesson: {interpretation_id?, clinician_id?}. Without an interpretation it is a practice lesson."""
+    body = _json_body()
+    session = coach.create_session(body.get("interpretation_id"), body.get("clinician_id"))
+    return jsonify(session.to_dict()), 201
+
+
+@api_bp.get("/coach/sessions")
+def list_coach_sessions():
+    """Training record, newest first. Filters: clinician_id, interpretation_id, limit."""
+    query = CoachSession.query
+    if request.args.get("clinician_id"):
+        query = query.filter_by(clinician_id=request.args["clinician_id"])
+    if request.args.get("interpretation_id"):
+        query = query.filter_by(interpretation_id=_int(request.args["interpretation_id"], "interpretation_id"))
+    limit = _int(request.args.get("limit"), "limit", 1, 200) or 50
+    return jsonify([s.to_dict() for s in query.order_by(CoachSession.id.desc()).limit(limit)])
+
+
+@api_bp.get("/coach/sessions/<int:session_id>")
+def get_coach_session(session_id):
+    session = _get_or_404(CoachSession, session_id)
+    return jsonify(session.to_dict(include_transcript=request.args.get("transcript") in ("1", "true")))
+
+
+@api_bp.post("/coach/sessions/<int:session_id>/token")
+def coach_token(session_id):
+    """Short-lived Anam session token for the coach, with this case in its prompt."""
+    session = _get_or_404(CoachSession, session_id)
+    try:
+        token = coach.create_coach_token(current_app.config, session)
+    except AvatarUnavailable as exc:
+        current_app.logger.warning("Coach unavailable: %s", exc)
+        return jsonify(error=str(exc)), 503
+    return jsonify(token)
+
+
+@api_bp.post("/coach/sessions/<int:session_id>/events")
+def coach_event(session_id):
+    """Record what happened in the lesson: {type, data}. See docs/API.md for the event types."""
+    session = _get_or_404(CoachSession, session_id)
+    body = _json_body()
+    if body.get("anam_session_id"):
+        session.anam_session_id = str(body["anam_session_id"])[:64]
+    message = coach.apply_event(session, body.get("type"), body.get("data") or {})
+    db.session.commit()
+    return jsonify(message=message, session=session.to_dict())
 
 
 @api_bp.get("/metrics")

@@ -195,4 +195,16 @@ describe("ScreeningScreen", () => {
     expect(await screen.findByRole("heading", { name: /Grace Uwase/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Patient ID")).toHaveValue("INT-K7M3Q");
   });
+
+  it("opens Kezia, the clinical coach, next to the reading", async () => {
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Walk me through this with Kezia/ }));
+    expect(screen.getByRole("complementary", { name: "Kezia, AI clinical coach" })).toBeInTheDocument();
+    expect(container.querySelector('[data-coach="findings"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close coach" }));
+    expect(await screen.findByRole("button", { name: /Walk me through this with Kezia/ })).toBeInTheDocument();
+  });
 });

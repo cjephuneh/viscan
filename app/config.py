@@ -54,4 +54,8 @@ class Config:
     ANAM_PERSONA_ID = os.getenv("ANAM_PERSONA_ID", "34584421-e431-4c3e-b7c5-eece5793a7dc")
     # GPT 4.1 Mini: reliable client-tool calling. The persona's default (GPT OSS 120B) leaks tool calls as text.
     ANAM_LLM_ID = os.getenv("ANAM_LLM_ID", "0934d97d-0c3a-4f33-91b0-5e136a0ef466")
+    ANAM_COACH_NAME = os.getenv("ANAM_COACH_NAME", "Kezia")
+    ANAM_COACH_AVATAR_ID = os.getenv("ANAM_COACH_AVATAR_ID", "54f78dd3-bd52-4077-899d-322fcb56d4cd")
+    ANAM_COACH_AVATAR_MODEL = os.getenv("ANAM_COACH_AVATAR_MODEL", "cara-4")
+    ANAM_COACH_VOICE_ID = os.getenv("ANAM_COACH_VOICE_ID", "23d9c8a1-eed2-4d69-8137-9634dde3c67d")
     ANAM_MAX_SESSION_SECONDS = int(os.getenv("ANAM_MAX_SESSION_SECONDS", "900"))

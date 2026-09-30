@@ -443,3 +443,118 @@ def test_avatar_token_uses_persona_with_intake_tools(client, monkeypatch):
     avatar._persona_cache.clear()
     monkeypatch.undo()
     assert client.post(f"/api/v1/intake/{iid}/avatar-token").status_code == 503
+
+
+def _coach(client, sid, kind, **data):
+    res = client.post(f"/api/v1/coach/sessions/{sid}/events", json={"type": kind, "data": data})
+    assert res.status_code == 200, res.json
+    return res.json
+
+
+def test_coach_lesson_records_quiz_plan_and_roleplay(client):
+    interp_id = upload(client, cervix_image(True), patient_external_id="PT-COACH").json["interpretation_id"]
+    session = client.post("/api/v1/coach/sessions", json={"interpretation_id": interp_id, "clinician_id": "nurse-07"})
+    assert session.status_code == 201
+    sid = session.json["id"]
+
+    assert "findings" in _coach(client, sid, "highlight", section="findings")["message"]
+    _coach(client, sid, "card", card="ablation_eligibility")
+    _coach(client, sid, "quiz_asked", question="Is this VIA positive?", options=["Yes", "No"], correct_index=0,
+           explanation="Dense acetowhite at the SCJ.")
+    assert _coach(client, sid, "quiz_answer", chosen_index=0)["message"] == "Correct."
+    _coach(client, sid, "quiz_asked", question="Ablate if TZ type 3?", options=["Yes", "No"], correct_index=1)
+    assert "The answer is: No" in _coach(client, sid, "quiz_answer", chosen_index=0)["message"]
+    _coach(client, sid, "action_step", step="Confirm the finding", why="AI is decision support")
+    _coach(client, sid, "action_step", step="Counsel the patient")
+    _coach(client, sid, "action_done", index=0)
+    _coach(client, sid, "learning", topic="Swede score", summary="Six of eight suggests high grade")
+    _coach(client, sid, "roleplay_start", scenario="Telling the patient her result")
+    _coach(client, sid, "roleplay_end", strengths=["Clear", "Kind"], improve="Check understanding")
+    done = _coach(client, sid, "finish", summary="Walked through the reading.")
+    assert "1 of 2 correct" in done["message"]
+
+    data = client.get(f"/api/v1/coach/sessions/{sid}").json
+    assert data["status"] == "completed" and data["score"] == {"asked": 2, "answered": 2, "correct": 1}
+    assert [s["done"] for s in data["action_plan"]] == [True, False]
+    assert data["roleplays"][0]["improve"] == "Check understanding"
+    assert data["topics"][0]["topic"] == "Swede score"
+    assert client.get("/api/v1/coach/sessions?clinician_id=nurse-07").json[0]["id"] == sid
+
+
+def test_coach_rejects_bad_input(client):
+    assert client.post("/api/v1/coach/sessions", json={"interpretation_id": 999}).status_code == 400
+    sid = client.post("/api/v1/coach/sessions", json={}).json["id"]
+    bad = [{"type": "dance"}, {"type": "highlight", "data": {"section": "nowhere"}},
+           {"type": "quiz_asked", "data": {"question": "?", "options": ["only one"], "correct_index": 0}},
+           {"type": "quiz_answer", "data": {"chosen_index": 0}}]
+    for body in bad:
+        assert client.post(f"/api/v1/coach/sessions/{sid}/events", json=body).status_code == 400
+
+
+def test_coach_token_briefs_the_case(client, monkeypatch):
+    from app.services import coach
+
+    calls = []
+
+    def fake_call(cfg, method, path, body=None, timeout=20):
+        calls.append((method, path, body))
+        if path.startswith("/avatars/"):
+            return {"id": "av-k", "portraitImageUrl": "https://img/kezia"}
+        return {"sessionToken": "coach-tok"}
+
+    coach._avatar_cache.clear()
+    monkeypatch.setattr(coach, "_call", fake_call)
+    client.application.config.update(ANAM_API_KEY="k", ANAM_COACH_AVATAR_ID="av-k", ANAM_COACH_VOICE_ID="vo-k")
+    interp_id = upload(client, cervix_image(True), patient_external_id="PT-BRIEF", age="41").json["interpretation_id"]
+    sid = client.post("/api/v1/coach/sessions", json={"interpretation_id": interp_id}).json["id"]
+
+    res = client.post(f"/api/v1/coach/sessions/{sid}/token")
+    assert res.status_code == 200 and res.json == {"session_token": "coach-tok",
+                                                   "persona": {"name": "Kezia", "image_url": "https://img/kezia"}}
+    config = calls[-1][2]["personaConfig"]
+    assert config["avatarId"] == "av-k" and config["voiceId"] == "vo-k"
+    assert f"Reading #{interp_id}" in config["systemPrompt"] and "age 41" in config["systemPrompt"]
+    assert "Ablation eligible" in config["systemPrompt"] and "AI clinical coach" in config["initialMessage"]
+    assert {t["name"] for t in config["tools"]} >= {"highlight_section", "ask_quiz", "start_roleplay", "add_action_step"}
+
+    practice = client.post("/api/v1/coach/sessions", json={}).json["id"]
+    client.post(f"/api/v1/coach/sessions/{practice}/token")
+    assert "No specific reading is open" in calls[-1][2]["personaConfig"]["systemPrompt"]
+
+    client.application.config.update(ANAM_API_KEY="")
+    coach._avatar_cache.clear()
+    monkeypatch.undo()
+    assert client.post(f"/api/v1/coach/sessions/{sid}/token").status_code == 503
+
+
+def test_past_screenings_history(client):
+    first = upload(client, cervix_image(True), patient_external_id="PT-HIST-1", site="Kigali HC").json
+    second = upload(client, cervix_image(False), patient_external_id="PT-HIST-2").json
+    client.post(f"/api/v1/interpretations/{first['interpretation_id']}/annotations",
+                json={"clinician_id": "nurse-07", "via_result": "VIA_POSITIVE", "notes": "Dense lesion at 3"})
+    hospital = client.get("/api/v1/partner-hospitals").json["results"][0]
+    client.post(f"/api/v1/interpretations/{first['interpretation_id']}/referrals", json={"hospital_id": hospital["id"]})
+    client.post(f"/api/v1/interpretations/{first['interpretation_id']}/notifications",
+                json={"channel": "sms", "phone": "+250788000111"})
+
+    data = client.get("/api/v1/screenings").json
+    assert data["total"] == 2 and data["pages"] == 1
+    assert [i["interpretation_id"] for i in data["items"]] == [second["interpretation_id"], first["interpretation_id"]]
+    row = data["items"][1]
+    assert row["patient_external_id"] == "PT-HIST-1" and row["site"] == "Kigali HC"
+    assert row["result_source"] == "clinician" and row["confirmed_by"] == "nurse-07"
+    assert row["clinician_notes"] == "Dense lesion at 3" and row["notifications"] == 1
+    assert row["referral"]["hospital"] == hospital["name"]
+    assert data["summary"]["total"] == 2 and data["summary"]["referred"] == 1
+
+    assert client.get("/api/v1/screenings?q=HIST-2").json["total"] == 1
+    assert client.get(f"/api/v1/screenings?q=%23{first['interpretation_id']}").json["items"][0]["patient_external_id"] == "PT-HIST-1"
+    assert client.get("/api/v1/screenings?referred=1").json["total"] == 1
+    assert client.get("/api/v1/screenings?status=reviewed").json["total"] == 1
+    assert client.get("/api/v1/screenings?per_page=1&page=2").json["items"][0]["interpretation_id"] == first["interpretation_id"]
+    assert client.get("/api/v1/screenings?from=2000-01-01&to=2000-12-31").json["total"] == 0
+    assert client.get("/api/v1/screenings?sort=sideways").status_code == 400
+    assert client.get("/api/v1/screenings?from=yesterday").status_code == 400
+
+    thumb = client.get(row["links"]["thumbnail"])
+    assert thumb.status_code == 200 and thumb.mimetype == "image/jpeg"

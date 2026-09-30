@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { CoachPanel } from "@/components/coach-panel";
 import { CheckedInPatients, IntakeSummary } from "@/components/intake-panel";
 import { SendResults } from "@/components/send-results";
 import { type Intake, getIntake } from "@/lib/intake";
@@ -162,6 +163,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   const [finalVia, setFinalVia] = useState<ViaResult | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [intake, setIntake] = useState<Intake | null>(null);
+  const [coachOpen, setCoachOpen] = useState(false);
 
   function selectIntake(next: Intake | null) {
     setIntake(next);
@@ -242,6 +244,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   }
 
   function clearImage() {
+    setCoachOpen(false);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setFile(null);
@@ -337,7 +340,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             : "Waiting for an image";
 
   return (
-    <div className="page">
+    <div className={coachOpen && result ? "page with-coach" : "page"}>
       <div className="atmosphere" aria-hidden="true" />
 
       <header className="hero">
@@ -358,6 +361,12 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               Start with an image
             </button>
             <p className="hero-note">AI-assisted reading · clinician confirms every result</p>
+            <Link className="hero-note learn-link" href="/screenings">
+              Past screenings →
+            </Link>
+            <Link className="hero-note learn-link" href="/learn">
+              Training with Kezia →
+            </Link>
           </div>
         </div>
 
@@ -547,7 +556,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
           {error ? <p className="error">{error}</p> : null}
 
           {result && (phase === "result" || phase === "confirmed") ? (
-            <figure className="overlay">
+            <figure className="overlay" data-coach="overlay">
               <img src={result.links.overlay} alt="AI annotated screening image with lesion markers" />
               <figcaption>AI lesion markers are approximate.</figcaption>
             </figure>
@@ -640,7 +649,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 </p>
               ) : null}
 
-              <div className={`verdict ${tone}`}>
+              <div className={`verdict ${tone}`} data-coach="verdict">
                 <p className="verdict-label">
                   {phase === "confirmed" ? "Confirmed result" : "AI reading · awaiting your confirmation"}
                 </p>
@@ -668,7 +677,17 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 </ul>
               </div>
 
-              <section className="result-block" aria-labelledby="findings-heading">
+              {!coachOpen ? (
+                <button type="button" className="coach-invite" onClick={() => setCoachOpen(true)}>
+                  <span className="coach-invite-dot" aria-hidden="true" />
+                  <span>
+                    <strong>Walk me through this with Kezia</strong>
+                    <small>AI clinical coach · explains the result, the next steps, quizzes you</small>
+                  </span>
+                </button>
+              ) : null}
+
+              <section className="result-block" aria-labelledby="findings-heading" data-coach="findings">
                 <h3 id="findings-heading" className="block-title">
                   Findings
                 </h3>
@@ -728,7 +747,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               </section>
 
               {result.lesions.length ? (
-                <section className="result-block" aria-labelledby="lesions-heading">
+                <section className="result-block" aria-labelledby="lesions-heading" data-coach="lesions">
                   <h3 id="lesions-heading" className="block-title">
                     Lesions ({result.lesions.length})
                   </h3>
@@ -750,7 +769,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               ) : null}
 
               {result.clinical_summary.key_observations.length ? (
-                <section className="result-block" aria-labelledby="obs-heading">
+                <section className="result-block" aria-labelledby="obs-heading" data-coach="observations">
                   <h3 id="obs-heading" className="block-title">
                     Key observations
                   </h3>
@@ -763,7 +782,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               ) : null}
 
               {result.histology_likelihood ? (
-                <section className="result-block" aria-labelledby="histo-heading">
+                <section className="result-block" aria-labelledby="histo-heading" data-coach="histology">
                   <h3 id="histo-heading" className="block-title">
                     AI-estimated histology likelihood
                   </h3>
@@ -782,7 +801,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               ) : null}
 
               {result.treatment_eligibility.checklist.length ? (
-                <section className="result-block" aria-labelledby="elig-heading">
+                <section className="result-block" aria-labelledby="elig-heading" data-coach="eligibility">
                   <h3 id="elig-heading" className="block-title">
                     WHO ablation checklist
                   </h3>
@@ -798,7 +817,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               ) : null}
 
               {result.recommendation.flags.length || result.image_assessment.adequacy.issues.length ? (
-                <section className="result-block" aria-labelledby="flags-heading">
+                <section className="result-block" aria-labelledby="flags-heading" data-coach="flags">
                   <h3 id="flags-heading" className="block-title">
                     Flags
                   </h3>
@@ -811,7 +830,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               ) : null}
 
               {result.clinical_summary.patient_explanation ? (
-                <section className="result-block" aria-labelledby="explain-heading">
+                <section className="result-block" aria-labelledby="explain-heading" data-coach="patient_explanation">
                   <h3 id="explain-heading" className="block-title">
                     What to tell the patient
                   </h3>
@@ -831,7 +850,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                     />
                   </label>
 
-                  <aside className="next-step" aria-labelledby="next-heading">
+                  <aside className="next-step" aria-labelledby="next-heading" data-coach="next_step">
                     <h3 id="next-heading" className="block-title">
                       If you confirm
                     </h3>
@@ -872,7 +891,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 </>
               ) : (
                 <>
-                  <article className="record">
+                  <article className="record" data-coach="record">
                     <div className="record-head">
                       <h3>Digital record</h3>
                       <p className="record-note">Saved for this visit after clinician confirmation</p>
@@ -945,6 +964,15 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
           </p>
         </section>
       </main>
+
+      {coachOpen && result ? (
+        <CoachPanel
+          key={result.interpretation_id}
+          interpretation={result}
+          clinicianId={visit.clinicianId.trim()}
+          onClose={() => setCoachOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
