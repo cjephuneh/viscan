@@ -133,10 +133,14 @@ def health():
 
 @api_bp.post("/interpret")
 def interpret():
-    """Upload a VIA image (multipart field 'image') and get an AI interpretation."""
+    """Upload a VIA image (multipart field 'image', taken after acetic acid) and get an AI
+    interpretation. Optionally add the pre-acetic-acid view of the same cervix as
+    'image_before'; it is stored with the visit and given to the model as the baseline."""
     file = request.files.get("image")
     if file is None or not file.filename:
         raise BadRequest("Upload the image in multipart field 'image'.")
+    before = request.files.get("image_before")
+    before_bytes = before.read() if before is not None and before.filename else None
     form = request.form
     fields = {
         "patient_external_id": form.get("patient_external_id"),
@@ -161,7 +165,7 @@ def interpret():
     intake_id = _int(form.get("intake_id"), "intake_id")
     intake = _get_or_404(IntakeSession, intake_id) if intake_id else None
     try:
-        result = analyze_image(file.read(), fields)
+        result = analyze_image(file.read(), fields, before_bytes=before_bytes)
     except PipelineError:
         raise
     except Exception as exc:

@@ -68,9 +68,12 @@ export type Interpretation = {
   history: { trend: string };
   review_status: string;
   engine: { name: string; model: string; latency_ms: number };
+  /** Pre-acetic-acid frame stored with the visit, if the clinician added one. */
+  before_image_id?: number | null;
   links: {
     self: string;
     image: string;
+    image_before?: string | null;
     overlay: string;
     report: string;
     annotate: string;
@@ -190,9 +193,16 @@ function postJson<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
-export function interpretImage(file: File, visit: VisitDetails, intakeId?: number): Promise<Interpretation> {
+export function interpretImage(
+  file: File,
+  visit: VisitDetails,
+  intakeId?: number,
+  /** Optional pre-acetic-acid view of the same cervix (baseline for the model). */
+  beforeFile?: File | null,
+): Promise<Interpretation> {
   const form = new FormData();
   form.append("image", file);
+  if (beforeFile) form.append("image_before", beforeFile);
   if (intakeId) form.append("intake_id", String(intakeId));
   const fields: Record<string, string> = {
     patient_external_id: visit.patientId.trim(),

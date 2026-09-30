@@ -118,6 +118,9 @@ class ViaImage(db.Model):
     site = db.Column(db.String(128))
     device = db.Column(db.String(128))
     quality = db.Column(db.JSON)
+    # "acetic_acid" = the VIA frame that is interpreted (default);
+    # "native" = optional pre-acetic-acid baseline of the same cervix.
+    capture = db.Column(db.String(32), default="acetic_acid")
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
 
     interpretations = db.relationship("AIInterpretation", backref="image", lazy=True)
@@ -134,6 +137,7 @@ class ViaImage(db.Model):
             "site": self.site,
             "device": self.device,
             "quality": self.quality,
+            "capture": self.capture or "acetic_acid",
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

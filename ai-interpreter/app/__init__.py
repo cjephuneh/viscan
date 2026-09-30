@@ -25,9 +25,27 @@ def create_app(overrides: dict | None = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        _ensure_columns(db)
         if app.config["SEED_DEMO_PARTNERS"]:
             from .services.care import seed_demo_partners
 
             seed_demo_partners(app.config["DEFAULT_LATITUDE"], app.config["DEFAULT_LONGITUDE"])
 
     return app
+
+
+# Columns added after the first release. create_all() only creates missing
+# tables, so existing databases get them here (idempotent).
+_ADDED_COLUMNS = (
+    ("via_image", "capture", "VARCHAR(32)"),
+)
+
+
+def _ensure_columns(database):
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(database.engine)
+    for table, column, ddl_type in _ADDED_COLUMNS:
+        if table in inspector.get_table_names() and column not in {c["name"] for c in inspector.get_columns(table)}:
+            with database.engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))

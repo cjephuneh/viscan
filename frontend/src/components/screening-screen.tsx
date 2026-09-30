@@ -128,6 +128,8 @@ function visitFromIntake(intake: Intake, current: VisitDetails): VisitDetails {
 export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  const beforeInputId = useId();
+  const beforeInputRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<string | null>(null);
   const patientRef = useRef<HTMLInputElement>(null);
   const clinicianRef = useRef<HTMLInputElement>(null);
@@ -139,6 +141,10 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   const [clinicianError, setClinicianError] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Optional baseline frame taken before acetic acid; stored with the visit and
+  // shown to the model next to the VIA frame. Never read on its own.
+  const [beforeFile, setBeforeFile] = useState<File | null>(null);
+  const [beforePreviewUrl, setBeforePreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [hot, setHot] = useState(false);
   const [phase, setPhase] = useState<Phase>("empty");
@@ -203,15 +209,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   }, [phase]);
 
   function takeFile(next: File | undefined) {
-    if (!next) return;
-    if (!ACCEPTED.includes(next.type)) {
-      setError("Use a JPG, PNG, or WEBP image.");
-      return;
-    }
-    if (next.size > MAX_BYTES) {
-      setError("That image is larger than 10 MB. Choose a smaller one.");
-      return;
-    }
+    if (!validImage(next)) return;
     setError("");
     setApiError("");
     setNotes("");
@@ -221,6 +219,45 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
     setPreviewUrl(URL.createObjectURL(next));
     setFile(next);
     setPhase("ready");
+  }
+
+  function validImage(next: File | undefined): next is File {
+    if (!next) return false;
+    if (!ACCEPTED.includes(next.type)) {
+      setError("Use a JPG, PNG, or WEBP image.");
+      return false;
+    }
+    if (next.size > MAX_BYTES) {
+      setError("That image is larger than 10 MB. Choose a smaller one.");
+      return false;
+    }
+    return true;
+  }
+
+  function takeBefore(next: File | undefined) {
+    if (!validImage(next)) return;
+    setError("");
+    if (beforePreviewUrl) URL.revokeObjectURL(beforePreviewUrl);
+    setBeforePreviewUrl(URL.createObjectURL(next));
+    setBeforeFile(next);
+    // A different baseline means a different reading: go back to "ready".
+    if (result) {
+      setResult(null);
+      setFinalVia(null);
+      setPhase(file ? "ready" : "empty");
+    }
+  }
+
+  function clearBefore() {
+    if (beforePreviewUrl) URL.revokeObjectURL(beforePreviewUrl);
+    setBeforePreviewUrl(null);
+    setBeforeFile(null);
+    if (beforeInputRef.current) beforeInputRef.current.value = "";
+    if (result) {
+      setResult(null);
+      setFinalVia(null);
+      setPhase(file ? "ready" : "empty");
+    }
   }
 
   function onDrop(event: React.DragEvent) {
@@ -235,6 +272,10 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setFile(null);
+    if (beforePreviewUrl) URL.revokeObjectURL(beforePreviewUrl);
+    setBeforePreviewUrl(null);
+    setBeforeFile(null);
+    if (beforeInputRef.current) beforeInputRef.current.value = "";
     setPhase("empty");
     setResult(null);
     setFinalVia(null);
@@ -262,7 +303,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
     setElapsed(0);
     setPhase("reading");
     try {
-      const data = await interpretImage(file, visit, intake?.id);
+      const data = await interpretImage(file, visit, intake?.id, beforeFile);
       setResult(data);
       setPhase("result");
     } catch (err) {
@@ -529,13 +570,66 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               <p className="formats">JPG, PNG, WEBP · up to 10 MB</p>
             </div>
           )}
+          <input
+            id={beforeInputId}
+            ref={beforeInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            hidden
+            onChange={(event) => takeBefore(event.target.files?.[0])}
+          />
+          <div className="before-slot" data-coach="before">
+            {beforePreviewUrl ? (
+              <>
+                <img src={beforePreviewUrl} alt="Cervix before acetic acid" />
+                <p>
+                  <strong>Before acetic acid</strong>
+                  <span>
+                    {beforeFile?.name}
+                    {beforeFile ? ` · ${formatSize(beforeFile.size)}` : ""}
+                  </span>
+                </p>
+                <div className="frame-actions">
+                  <button type="button" onClick={() => beforeInputRef.current?.click()} disabled={phase === "reading"}>
+                    Replace
+                  </button>
+                  <button type="button" onClick={clearBefore} disabled={phase === "reading"}>
+                    Remove
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p>
+                  <strong>Before acetic acid</strong>
+                  <span>Optional. Gives the AI a baseline so only true acetowhite change is counted.</span>
+                </p>
+                <button
+                  type="button"
+                  className="choose small"
+                  onClick={() => beforeInputRef.current?.click()}
+                  disabled={phase === "reading"}
+                >
+                  Add before image
+                </button>
+              </>
+            )}
+          </div>
           {error ? <p className="error">{error}</p> : null}
 
           {result && (phase === "result" || phase === "confirmed") ? (
-            <figure className="overlay" data-coach="overlay">
-              <img src={result.links.overlay} alt="AI annotated screening image with lesion markers" />
-              <figcaption>AI lesion markers are approximate.</figcaption>
-            </figure>
+            <div className={result.links.image_before ? "overlays pair" : "overlays"}>
+              {result.links.image_before ? (
+                <figure className="overlay">
+                  <img src={result.links.image_before} alt="Cervix before acetic acid" />
+                  <figcaption>Before acetic acid (baseline)</figcaption>
+                </figure>
+              ) : null}
+              <figure className="overlay" data-coach="overlay">
+                <img src={result.links.overlay} alt="AI annotated screening image with lesion markers" />
+                <figcaption>{result.links.image_before ? "After acetic acid · " : ""}AI lesion markers are approximate.</figcaption>
+              </figure>
+            </div>
           ) : null}
         </section>
 
@@ -889,8 +983,12 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                         <dt>Image</dt>
                         <dd>
                           <div className="record-image">
+                            {beforePreviewUrl ? <img src={beforePreviewUrl} alt="" /> : null}
                             {previewUrl ? <img src={previewUrl} alt="" /> : null}
-                            <span>{file?.name}</span>
+                            <span>
+                              {beforeFile ? `${beforeFile.name} (before) · ` : ""}
+                              {file?.name}
+                            </span>
                           </div>
                         </dd>
                       </div>

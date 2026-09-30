@@ -129,6 +129,41 @@ describe("ScreeningScreen", () => {
     expect(firstVideoPoll).toBeGreaterThan(annotateIndex);
   });
 
+  it("sends an optional before-acetic-acid image and shows both frames", async () => {
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    typeInto(screen.getByLabelText("Clinician ID"), "nurse-07");
+    uploadImage(container);
+
+    // Second (hidden) file input belongs to the optional baseline slot.
+    const inputs = container.querySelectorAll('input[type="file"]');
+    expect(inputs).toHaveLength(2);
+    fireEvent.change(inputs[1], { target: { files: [makeImageFile("before.png")] } });
+    expect(screen.getByText("before.png", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Cervix before acetic acid" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    await screen.findByRole("button", { name: "Confirm this finding" });
+
+    const body = interpretCall(fetchMock)![1]!.body as FormData;
+    expect((body.get("image") as File).name).toBe("via-capture.png");
+    expect((body.get("image_before") as File).name).toBe("before.png");
+
+    expect(screen.getByText("Before acetic acid (baseline)")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "AI annotated screening image with lesion markers" })).toBeInTheDocument();
+  });
+
+  it("does not send a before image when none was added", async () => {
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    await screen.findByRole("button", { name: "Confirm this finding" });
+    const body = interpretCall(fetchMock)![1]!.body as FormData;
+    expect(body.has("image_before")).toBe(false);
+    expect(screen.queryByText("Before acetic acid (baseline)")).not.toBeInTheDocument();
+  });
+
   it("records the other finding and hides the referral link when not suspicious", async () => {
     const { container } = render(<ScreeningScreen />);
     typeInto(screen.getByLabelText("Patient ID"), "PT-1");

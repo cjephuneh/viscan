@@ -225,7 +225,8 @@ class OpenAIInterpreter:
         self.model = model
         self.reasoning_effort = reasoning_effort
 
-    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample]) -> dict:
+    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
+                  before_bytes: bytes | None = None) -> dict:
         content = []
         if examples:
             content.append({
@@ -240,9 +241,19 @@ class OpenAIInterpreter:
                 content.append({"type": "text", "text": label})
                 content.append({"type": "image_url", "image_url": {"url": _to_data_url(ex.image_bytes, 768), "detail": "low"}})
 
+        if before_bytes:
+            content.append({
+                "type": "text",
+                "text": "Baseline: native (pre-acetic-acid) view of the same cervix, taken before acetic acid "
+                        "was applied. Whitening that is present ONLY in the post-acetic-acid image below is "
+                        "acetowhite change; whiteness already visible here (e.g. mucus, leukoplakia, glare, "
+                        "nabothian cysts) is not. Interpret and report on the post-acetic-acid image only.",
+            })
+            content.append({"type": "image_url", "image_url": {"url": _to_data_url(before_bytes, 1024), "detail": "high"}})
         content.append({
             "type": "text",
-            "text": f"Interpret this new VIA image. {_context_text(context)}",
+            "text": ("Interpret this new VIA image (1 minute after acetic acid)." if before_bytes
+                     else "Interpret this new VIA image.") + f" {_context_text(context)}",
         })
         content.append({"type": "image_url", "image_url": {"url": _to_data_url(image_bytes), "detail": "high"}})
 
@@ -283,7 +294,9 @@ class HeuristicInterpreter:
     engine = "heuristic"
     model = "acetowhite-hsv-baseline-v1"
 
-    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample]) -> dict:
+    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
+                  before_bytes: bytes | None = None) -> dict:
+        # The baseline frame is ignored by the colour heuristic; only the VIA frame is read.
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img.thumbnail((512, 512))
         hsv = np.asarray(img.convert("HSV"), dtype=np.float32) / 255.0

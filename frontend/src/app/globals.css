@@ -918,13 +918,13 @@ button:disabled {
 }
 
 .record-image {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  display: flex;
   gap: 12px;
   align-items: center;
 }
 
 .record-image img {
+  flex: none;
   width: 56px;
   height: 56px;
   object-fit: cover;
@@ -4088,4 +4088,66 @@ button:disabled {
   color: #fff;
   font-size: 0.95rem;
   line-height: 1.4;
+}
+
+/* Optional pre-acetic-acid baseline frame */
+.before-slot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--line);
+  background: #fbfcfd;
+}
+
+.before-slot img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #152229;
+}
+
+.before-slot > p {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+  grid-column: span 1;
+}
+
+.before-slot > p:first-child {
+  grid-column: span 2;
+}
+
+.before-slot strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.before-slot span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.choose.small {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+
+.overlays {
+  display: grid;
+  gap: 12px;
+}
+
+.overlays.pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .overlays.pair {
+    grid-template-columns: 1fr;
+  }
 }

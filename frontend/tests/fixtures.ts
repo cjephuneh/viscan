@@ -74,9 +74,11 @@ export const interpretationFixture: Interpretation = {
   history: { trend: "first_screen_on_record" },
   review_status: "pending",
   engine: { name: "openai", model: "gpt-5", latency_ms: 42000 },
+  before_image_id: null,
   links: {
     self: "/api/v1/interpretations/7",
     image: "/api/v1/images/3/file",
+    image_before: null,
     overlay: "/api/v1/interpretations/7/overlay.png",
     report: "/api/v1/interpretations/7/report",
     annotate: "/api/v1/interpretations/7/annotations",
@@ -211,8 +213,21 @@ export function mockFetch(
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
-    if (url === "/api/v1/interpret")
-      return overrides.interpretError ? json({ error: overrides.interpretError }, 502) : json(interpretationFixture, 201);
+    if (url === "/api/v1/interpret") {
+      if (overrides.interpretError) return json({ error: overrides.interpretError }, 502);
+      const body = init?.body;
+      const withBefore = body instanceof FormData && body.has("image_before");
+      return json(
+        withBefore
+          ? {
+              ...interpretationFixture,
+              before_image_id: 4,
+              links: { ...interpretationFixture.links, image_before: "/api/v1/images/4/file" },
+            }
+          : interpretationFixture,
+        201,
+      );
+    }
     if (url.startsWith("/api/v1/intake?")) return json(overrides.waiting ?? []);
     if (url === `/api/v1/intake/${intakeFixture.id}` || url === `/api/v1/intake/code/${intakeFixture.code}`)
       return json(intakeFixture);

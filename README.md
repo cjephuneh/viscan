@@ -50,7 +50,9 @@ npm test
 The frontend is deliberately reduced to the MVP: it opens directly on the clinician screen, and there is one patient screen.
 Both share a two-link bar (`src/app/(clinic)/layout.tsx`).
 
-- `/` — Clinician screening: enter the patient details (or pick a patient who checked in with Mia), add **one** VIA image,
+- `/` — Clinician screening: enter the patient details (or pick a patient who checked in with Mia), add the VIA image
+  (after acetic acid) and optionally the **before-acetic-acid** frame of the same cervix — it is stored with the visit and
+  given to the model as the baseline so only true acetowhite change counts (`image_before` on `POST /api/v1/interpret`) —
   get the AI reading, confirm or correct it. After confirmation: digital record, printable report, avatar **video report**
   (iframe), send results by SMS/WhatsApp, and "Start another screening" for the next image. "Walk me through this with Kezia"
   docks the AI clinical coach next to the reading.

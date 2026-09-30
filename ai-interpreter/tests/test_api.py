@@ -631,3 +631,73 @@ def test_video_report_disabled_without_avatar_url(client):
                       json={"clinician_id": "DR-1", "via_result": "VIA_NEGATIVE"})
     assert ann.status_code == 201
     assert ann.json["video_report"]["status"] == "disabled"
+
+
+# --- Before / after acetic acid ------------------------------------------------
+
+def test_before_image_is_stored_with_the_visit_and_linked(client):
+    form = {"image": (io.BytesIO(cervix_image(True)), "after.jpg"),
+            "image_before": (io.BytesIO(cervix_image(False)), "before.jpg"),
+            "patient_external_id": "P-BA"}
+    res = client.post("/api/v1/interpret", data=form, content_type="multipart/form-data")
+    assert res.status_code == 201, res.json
+    body = res.json
+    assert body["before_image_id"] and body["before_image_id"] != body["image_id"]
+    assert body["links"]["image_before"] == f"/api/v1/images/{body['before_image_id']}/file"
+    # The reading is of the post-acetic-acid frame only.
+    assert body["diagnosis"]["via_result"] == "VIA_POSITIVE"
+
+    before = client.get(body["links"]["image_before"])
+    assert before.status_code == 200 and before.mimetype == "image/jpeg"
+    after = client.get(body["links"]["image"])
+    assert after.data != before.data
+
+    detail = client.get(body["links"]["self"]).json
+    assert detail["before_image_id"] == body["before_image_id"]
+    assert client.get(body["links"]["report"]).status_code == 200
+
+
+def test_single_image_has_no_before_link(client):
+    body = upload(client, cervix_image(False)).json
+    assert body["before_image_id"] is None
+    assert body["links"]["image_before"] is None
+
+
+def test_unreadable_before_image_is_rejected(client):
+    form = {"image": (io.BytesIO(cervix_image(True)), "after.jpg"),
+            "image_before": (io.BytesIO(b"not an image"), "before.jpg")}
+    res = client.post("/api/v1/interpret", data=form, content_type="multipart/form-data")
+    assert res.status_code == 400
+    assert "Before-acetic-acid image" in res.json["error"]
+
+
+def test_openai_engine_receives_both_frames(monkeypatch):
+    from app.services.interpreter import OpenAIInterpreter
+
+    captured = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            msg = type("M", (), {"refusal": None, "content": json.dumps({
+                "image_modality": "acetic_acid", "via_result": "VIA_POSITIVE", "confidence": 0.8,
+                "image_adequacy": {"adequate": True, "issues": []}, "scj_visibility": "fully_visible",
+                "transformation_zone_type": "type_1", "findings": {}, "lesions": [], "rationale": "x",
+                "swede": {"acetowhiteness": 2, "margins": 1, "vessels": 0, "size": 1, "iodine": 0},
+            })})()
+            return type("R", (), {"choices": [type("C", (), {"message": msg})()]})()
+
+    engine = OpenAIInterpreter.__new__(OpenAIInterpreter)
+    engine.client = type("Client", (), {"chat": type("Chat", (), {"completions": FakeCompletions()})()})()
+    engine.model, engine.reasoning_effort = "gpt-5", ""
+
+    engine.interpret(cervix_image(True), {}, [], before_bytes=cervix_image(False))
+    content = captured["messages"][1]["content"]
+    images = [c for c in content if c["type"] == "image_url"]
+    texts = " ".join(c["text"] for c in content if c["type"] == "text")
+    assert len(images) == 2
+    assert "pre-acetic-acid" in texts and "post-acetic-acid image only" in texts
+
+    captured.clear()
+    engine.interpret(cervix_image(True), {}, [])
+    assert len([c for c in captured["messages"][1]["content"] if c["type"] == "image_url"]) == 1

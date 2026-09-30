@@ -120,7 +120,8 @@ def _reference_examples(limit: int, exclude_sha: str) -> list[ReferenceExample]:
     return examples
 
 
-def analyze_image(image_bytes: bytes, fields: dict) -> dict:
+def _store(image_bytes: bytes) -> tuple[Image.Image, str, str]:
+    """Validate, content-address and persist an upload. Returns (image, sha256, filename)."""
     img = _load_image(image_bytes)
     sha = hashlib.sha256(image_bytes).hexdigest()
     ext = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}[img.format]
@@ -128,12 +129,11 @@ def analyze_image(image_bytes: bytes, fields: dict) -> dict:
     storage = get_storage()
     if not storage.exists(filename):
         storage.put(filename, image_bytes, ALLOWED_FORMATS[img.format])
+    return img, sha, filename
 
-    quality = assess_quality(img)
-    patient = _get_or_create_patient(fields)
-    prior = _prior_screens(patient)
-    visit = _create_visit(patient, fields)
-    via_image = ViaImage(
+
+def _via_image(img, sha, filename, patient, visit, fields, quality, capture) -> ViaImage:
+    return ViaImage(
         patient=patient,
         visit=visit,
         filename=filename,
@@ -144,8 +144,37 @@ def analyze_image(image_bytes: bytes, fields: dict) -> dict:
         site=fields.get("site"),
         device=fields.get("device"),
         quality=quality,
+        capture=capture,
     )
+
+
+def before_image_of(interp: AIInterpretation) -> ViaImage | None:
+    """The optional pre-acetic-acid frame stored with the same visit."""
+    visit = interp.image.visit
+    if visit is None:
+        return None
+    return next((i for i in visit.images if i.capture == "native"), None)
+
+
+def analyze_image(image_bytes: bytes, fields: dict, before_bytes: bytes | None = None) -> dict:
+    img, sha, filename = _store(image_bytes)
+    before_img = None
+    if before_bytes:
+        try:
+            before_img, before_sha, before_filename = _store(before_bytes)
+        except PipelineError as exc:
+            raise PipelineError(f"Before-acetic-acid image: {exc}") from exc
+
+    quality = assess_quality(img)
+    patient = _get_or_create_patient(fields)
+    prior = _prior_screens(patient)
+    visit = _create_visit(patient, fields)
+    via_image = _via_image(img, sha, filename, patient, visit, fields, quality, "acetic_acid")
     db.session.add(via_image)
+    if before_img is not None:
+        # Baseline only: stored and shown, never gated or interpreted on its own.
+        db.session.add(_via_image(before_img, before_sha, before_filename, patient, visit, fields,
+                                  assess_quality(before_img), "native"))
 
     context = visit.context()
     if not context.get("previous_screening_result") and prior:
@@ -168,7 +197,7 @@ def analyze_image(image_bytes: bytes, fields: dict) -> dict:
         interpreter = build_interpreter(current_app.config)
         engine, model = interpreter.engine, interpreter.model
         examples = _reference_examples(current_app.config["FEWSHOT_EXAMPLES"], sha) if engine == "openai" else []
-        ai = with_defaults(interpreter.interpret(image_bytes, context, examples))
+        ai = with_defaults(interpreter.interpret(image_bytes, context, examples, before_bytes=before_bytes))
     latency_ms = int((time.perf_counter() - started) * 1000)
 
     recommendation = build_recommendation(ai, context, current_app.config["REVIEW_CONFIDENCE_THRESHOLD"])
@@ -208,9 +237,11 @@ LESION_FIELDS = ("clock_start", "clock_end", "area_percent", "density", "margins
 def build_response(interp: AIInterpretation) -> dict:
     ai, assessment, rec = interp.findings, interp.assessment, interp.recommendation
     image, base = interp.image, "/api/v1"
+    before = before_image_of(interp)
     return {
         "interpretation_id": interp.id,
         "image_id": image.id,
+        "before_image_id": before.id if before else None,
         "patient_id": image.patient_id,
         "visit_id": image.visit_id,
         "created_at": interp.created_at.isoformat() if interp.created_at else None,
@@ -263,6 +294,7 @@ def build_response(interp: AIInterpretation) -> dict:
         "links": {
             "self": f"{base}/interpretations/{interp.id}",
             "image": f"{base}/images/{image.id}/file",
+            "image_before": f"{base}/images/{before.id}/file" if before else None,
             "overlay": f"{base}/interpretations/{interp.id}/overlay.png",
             "report": f"{base}/interpretations/{interp.id}/report",
             "annotate": f"{base}/interpretations/{interp.id}/annotations",
