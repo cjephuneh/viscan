@@ -1,8 +1,22 @@
-version: '3.8'
+# Production stack. Only the Nginx gateway is published (port 80); every other
+# service is reachable solely through it on the private viscan-network.
+#
+# Secrets/credentials are NOT in this file. They come from:
+#   - ./.env                 -> shared values (DB_*, S3_*) substituted below
+#   - ./<service>/.env       -> per-service secrets (API keys, etc.)
+# See .env.example and <service>/.env.example.
+
+x-s3-env: &s3-env
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+  S3_BUCKET_NAME: ${S3_BUCKET_NAME:-via-images}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
 
 services:
   # =============================================================
-  # 1. Reverse Proxy Gateway (Nginx)
+  # 1. Reverse Proxy Gateway (Nginx) - the only public entrypoint
   # =============================================================
   gateway:
     build:
@@ -21,6 +35,8 @@ services:
 
   # =============================================================
   # 2. Next.js Frontend (Clinician & Patient Intake UI)
+  #    Browser calls /api/v1/* which Nginx routes directly to the
+  #    services; VISCAN_API_URL is only used by Next's own proxy.
   # =============================================================
   frontend:
     build:
@@ -32,11 +48,14 @@ services:
       - HOSTNAME=0.0.0.0
       - PORT=3000
       - VISCAN_API_URL=http://ai-interpreter:5050
+      - VISCAN_API_KEY=${VISCAN_API_KEY:-}
     networks:
       - viscan-network
 
   # =============================================================
   # 3. AI Interpreter (VIA AI Vision & Mia Intake Avatar)
+  #    Images are stored in S3/MinIO (bucket ${S3_BUCKET_NAME}),
+  #    /data keeps only the SQLite DB when no Postgres is configured.
   # =============================================================
   ai-interpreter:
     build:
@@ -45,15 +64,15 @@ services:
     restart: unless-stopped
     env_file:
       - ./ai-interpreter/.env
+    environment:
+      <<: *s3-env
+      S3_PREFIX: interpreter/
     volumes:
       - viscan-interpreter-data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      viscan-network:
-        aliases:
-          - backend-interpreter
-          - backend
+      - viscan-network
 
   # =============================================================
   # 4. AI Avatar Microservice (Clinical Video Report Generator)
@@ -72,6 +91,8 @@ services:
 
   # =============================================================
   # 5. Core VISCAN Backend API (Screenings, Queue & Notifications)
+  #    Talks to Postgres on the Docker host and to ai-interpreter
+  #    for VIA analysis. Images are stored in S3/MinIO.
   # =============================================================
   backend:
     build:
@@ -81,17 +102,20 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - PORT=8080
-      - FLASK_ENV=production
-      - DB_HOST=host.docker.internal
-      - DB_PORT=5432
-      - DB_USER=dev_user
-      - DB_PASSWORD=DevTeam2026_GlobalAccess
-      - DB_NAME=app_db
-      - DB_SSLMODE=disable
-      - AI_API_URL=http://ai-interpreter:5050
-    volumes:
-      - viscan-backend-uploads:/app/uploads
+      <<: *s3-env
+      S3_PREFIX: backend/
+      PORT: "8080"
+      FLASK_ENV: production
+      FLASK_CONFIG: production
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_NAME: ${DB_NAME:-}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
+      AI_API_URL: http://ai-interpreter:5050
+      AI_API_KEY: ${VISCAN_API_KEY:-}
+      PUBLIC_BASE_URL: http://backend:8080
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -103,4 +127,3 @@ networks:
 
 volumes:
   viscan-interpreter-data:
-  viscan-backend-uploads:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the ViScan deployer every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=viscan-deploy.service
+
+[Install]
+WantedBy=timers.target

@@ -1,5 +1,14 @@
+import os
+
 import pytest
 from app.services.anam_service import anam_service, AnamService
+
+# These tests call the real Anam API (and one starts a real video render).
+# They need a valid ANAM_API_KEY and are skipped unless ANAM_LIVE_TESTS=1.
+anam_live = pytest.mark.skipif(
+    os.getenv("ANAM_LIVE_TESTS") != "1",
+    reason="live Anam API test; set ANAM_LIVE_TESTS=1 with a real ANAM_API_KEY to run",
+)
 
 
 @pytest.mark.asyncio
@@ -8,6 +17,7 @@ async def test_anam_service_configured():
     assert isinstance(anam_service.is_configured, bool)
 
 
+@anam_live
 @pytest.mark.asyncio
 async def test_create_session_token_contract():
     """Verify session token generation returns a valid token structure."""
@@ -19,6 +29,7 @@ async def test_create_session_token_contract():
     assert len(result["sessionToken"]) > 10
 
 
+@anam_live
 @pytest.mark.asyncio
 async def test_create_avatar_video_contract():
     """Verify avatar video creation initiates and returns a video job ID."""

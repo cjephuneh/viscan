@@ -11,6 +11,7 @@ from ..models import AIInterpretation, ClinicianAnnotation, Lesion, Patient, Scr
 from .interpreter import ReferenceExample, build_interpreter, with_defaults
 from .quality import assess_quality
 from .rules import build_assessment, build_recommendation
+from .storage import get_storage
 
 ALLOWED_FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
 
@@ -93,7 +94,7 @@ def _reference_examples(limit: int, exclude_sha: str) -> list[ReferenceExample]:
     """Pick recent clinician-verified images, one per VIA class where possible."""
     if limit <= 0:
         return []
-    upload_dir = Path(current_app.config["UPLOAD_DIR"])
+    storage = get_storage()
     examples, seen_classes, seen_images = [], set(), set()
     candidates = (
         ClinicianAnnotation.query
@@ -108,10 +109,11 @@ def _reference_examples(limit: int, exclude_sha: str) -> list[ReferenceExample]:
         image = ann.image
         if ann.via_result in seen_classes or image.id in seen_images or image.sha256 == exclude_sha:
             continue
-        path = upload_dir / image.filename
-        if not path.exists():
+        try:
+            image_bytes = storage.get(image.filename)
+        except FileNotFoundError:
             continue
-        examples.append(ReferenceExample(image.id, path.read_bytes(), ann.via_result, ann.notes or ""))
+        examples.append(ReferenceExample(image.id, image_bytes, ann.via_result, ann.notes or ""))
         seen_classes.add(ann.via_result)
         seen_images.add(image.id)
     return examples
@@ -122,9 +124,9 @@ def analyze_image(image_bytes: bytes, fields: dict) -> dict:
     sha = hashlib.sha256(image_bytes).hexdigest()
     ext = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}[img.format]
     filename = f"{sha}.{ext}"
-    path = Path(current_app.config["UPLOAD_DIR"]) / filename
-    if not path.exists():
-        path.write_bytes(image_bytes)
+    storage = get_storage()
+    if not storage.exists(filename):
+        storage.put(filename, image_bytes, ALLOWED_FORMATS[img.format])
 
     quality = assess_quality(img)
     patient = _get_or_create_patient(fields)

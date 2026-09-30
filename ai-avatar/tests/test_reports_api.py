@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from httpx import AsyncClient
 
@@ -81,6 +83,10 @@ async def test_list_reports_and_filtering(client: AsyncClient, sample_hsil_paylo
         assert r["patient_id"] == sample_hsil_payload["patient_id"]
 
 
+@pytest.mark.skipif(
+    os.getenv("ANAM_LIVE_TESTS") != "1",
+    reason="live Anam API test; set ANAM_LIVE_TESTS=1 with a real ANAM_API_KEY to run",
+)
 @pytest.mark.asyncio
 async def test_generate_session_token(client: AsyncClient, sample_hsil_payload: dict):
     """Test generating a fresh WebRTC session token for an existing report."""

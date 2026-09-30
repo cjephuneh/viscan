@@ -96,9 +96,40 @@ docker compose run --rm test
 ## 🧪 Testing
 
 - **Frontend Tests**: `cd frontend && npm test`
-- **Core Backend Tests**: `cd backend && pytest`
-- **AI Interpreter Tests**: `cd ai-interpreter && pytest tests/test_api.py`
-- **AI Avatar Tests**: `cd ai-avatar && pytest -v` (or `docker compose run --rm test`)
+- **Core Backend Tests**: `cd backend && python -m pytest`
+- **AI Interpreter Tests**: `cd ai-interpreter && python -m pytest`
+- **AI Avatar Tests**: `cd ai-avatar && python -m pytest` (live Anam tests run only with `ANAM_LIVE_TESTS=1`)
+
+All four suites run in GitHub Actions on every push and pull request ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)).
+
+---
+
+## 🚢 Production Deployment (Nginx gateway on `gp5`)
+
+Production runs from [`docker-compose.prod.yml`](./docker-compose.prod.yml): an **Nginx gateway on port 80** is the only public
+entrypoint and routes to the four services (see [`nginx/nginx.conf`](./nginx/nginx.conf)):
+
+| Path | Service |
+|---|---|
+| `/`, everything not below | frontend |
+| `/api/v1/*` (interpret, intake, interpretations, images/&lt;id&gt;/file, avatar, worklist, …) | ai-interpreter |
+| `/api/v1/{facilities,screenings,analysis-queue,analysis-jobs,ai-results,maps,notifications,language,voice}/`, `/api/v1/health/`, `/api/v1/docs`, `/api/v1/backend-images/<id>/file` | backend |
+| `/api/v1/reports`, `/api/v1/personas`, `/player/*` | ai-avatar |
+
+VIA images are stored in the S3-compatible **MinIO** bucket `via-images` (prefixes `interpreter/` and `backend/`), configured through
+`S3_*` in the root `.env` (see [`.env.example`](./.env.example)). Without `S3_ENDPOINT` the services fall back to local disk.
+
+**How a deploy happens** (no secrets are stored in GitHub):
+
+1. Push to `main` → GitHub Actions runs all test suites.
+2. On the server a systemd timer runs [`scripts/server-deploy.sh`](./scripts/server-deploy.sh) every 2 minutes. When it sees a new
+   commit on `origin/main` whose CI check *"all tests passed"* is green, it pulls it and runs `docker compose -f docker-compose.prod.yml up --build -d`,
+   then health-checks the gateway. A red CI run is never deployed.
+3. Logs: `ssh gp5 tail -f ~/.viscan-deploy/deploy.log` or `journalctl -u viscan-deploy.service`.
+
+One-time server setup: clone the repo to `/home/ubuntu/viscan`, create `.env`, `ai-interpreter/.env`, `ai-avatar/.env`, `backend/.env`
+from their `.example` files, then `sudo ./scripts/install-server-deployer.sh`.
+Manual deploy / env sync from a laptop: `./scripts/deploy.sh` (`--env-only` to only copy env files).
 
 ---
 

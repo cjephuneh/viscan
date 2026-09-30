@@ -17,9 +17,10 @@ RUN pip install -r requirements.txt
 COPY app ./app
 COPY run.py .
 
+# Flask creates /app/instance at start-up, so the runtime user must own /app too.
 RUN useradd --create-home --uid 1000 viscan \
-    && mkdir -p /data/uploads \
-    && chown -R viscan:viscan /data
+    && mkdir -p /data/uploads /app/instance \
+    && chown -R viscan:viscan /data /app
 USER viscan
 VOLUME ["/data"]
 
