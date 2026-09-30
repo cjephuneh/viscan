@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VideoReport } from "@/components/video-report";
+import { VideoReport, splitScript } from "@/components/video-report";
 import { mockFetch, videoReportFixture } from "./fixtures";
 
 type Listener = (...args: unknown[]) => void;
@@ -151,5 +151,16 @@ describe("VideoReport", () => {
     const { container } = render(<VideoReport interpretationId={7} enabled={false} />);
     expect(container).toBeEmptyDOMElement();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("splitScript", () => {
+  it("keeps short paragraphs and cuts long ones at sentence ends", () => {
+    const long = Array.from({ length: 12 }, (_, i) => `Sentence number ${i + 1} of the clinical report is here.`).join(" ");
+    const parts = splitScript(`Hello there.\n\n${long}`, 200);
+    expect(parts[0]).toBe("Hello there.");
+    expect(parts.length).toBeGreaterThan(3);
+    for (const part of parts) expect(part.length).toBeLessThanOrEqual(200);
+    expect(parts.slice(1).join(" ")).toBe(long);
   });
 });

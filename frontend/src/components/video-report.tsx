@@ -16,6 +16,27 @@ const GIVE_UP_MS = 15 * 60 * 1000;
 const LIVE_IDLE_CLOSE_MS = 8000;
 const VIDEO_ID = "report-live-video";
 
+/** Paragraphs, with long ones cut at sentence ends so each talk() stays short. */
+export function splitScript(script: string, maxChars = 400): string[] {
+  const out: string[] = [];
+  for (const paragraph of script.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)) {
+    if (paragraph.length <= maxChars) {
+      out.push(paragraph);
+      continue;
+    }
+    let chunk = "";
+    for (const sentence of paragraph.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) ?? [paragraph]) {
+      if (chunk && chunk.length + sentence.length > maxChars) {
+        out.push(chunk.trim());
+        chunk = "";
+      }
+      chunk += sentence;
+    }
+    if (chunk.trim()) out.push(chunk.trim());
+  }
+  return out;
+}
+
 type Mp4State =
   | { kind: "preparing"; status: VideoReportStatus["status"] | "creating" }
   | { kind: "ready"; report: VideoReportStatus }
@@ -136,7 +157,7 @@ export function VideoReport({
   useEffect(() => {
     if (liveStatus !== "live" || spokenRef.current || !scriptRef.current) return;
     spokenRef.current = true;
-    const paragraphs = scriptRef.current.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const paragraphs = splitScript(scriptRef.current);
     void (async () => {
       for (const paragraph of paragraphs) {
         const sent = await talk(paragraph);
