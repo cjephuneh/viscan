@@ -114,8 +114,10 @@ async def player_page(report_id: str, db: AsyncSession = Depends(get_db)):
             status_code=404,
         )
 
-    # Refresh video url if pending
-    if report.anam_video_id and (not report.anam_video_url or report.video_status != "completed"):
+    # Always re-fetch the video URL: Anam returns presigned links that expire
+    # after ~1 hour, and the player is embedded in the frontend long after
+    # rendering (care page, screening history). Falls back to the stored URL.
+    if report.anam_video_id:
         try:
             info = await anam_service.get_avatar_video(report.anam_video_id)
             content = info.get("content", {})
