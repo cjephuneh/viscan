@@ -1,13 +1,26 @@
 services:
-  viscan:
+  backend:
     build: .
-    image: viscan:latest
-    ports:
-      - "5050:5050"
+    image: viscan-backend:latest
     env_file:
       - .env
     volumes:
       - viscan-data:/data
+    ports:
+      - "5050:5050"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: viscan-frontend:latest
+    environment:
+      VISCAN_API_URL: http://backend:5050
+      VISCAN_API_KEY: ${VISCAN_API_KEY:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

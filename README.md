@@ -50,10 +50,20 @@ referral, suggested supplies, send results by SMS/WhatsApp — messages are simu
 
 ```bash
 cp .env.example .env        # add OPENAI_API_KEY, ANAM_API_KEY (and DB_* for Postgres)
-docker compose up --build   # http://localhost:5050
+docker compose up --build   # UI: http://localhost:3000 · API: http://localhost:5050
 ```
 
-Without `DB_HOST`, data is stored in SQLite on the `viscan-data` volume.
+| Service | Image | Dockerfile | Port |
+|---|---|---|---|
+| `backend` | `viscan-backend` | `Dockerfile` (Flask + gunicorn) | 5050 |
+| `frontend` | `viscan-frontend` | `frontend/Dockerfile` (Next.js standalone) | 3000 |
+
+The frontend reaches the API at `http://backend:5050` inside the compose network. Without
+`DB_HOST` (or `DATABASE_URL`), data is stored in SQLite on the `viscan-data` volume; set
+`DATABASE_URL=sqlite:////data/viscan.db` in `.env` to force SQLite while `DB_*` is configured.
+
+Browsers only allow microphone access (needed for the Mia avatar) on `https://` or `localhost`,
+so put the frontend behind an HTTPS reverse proxy when deploying to a server.
 
 ## Run locally
 
