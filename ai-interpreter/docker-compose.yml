@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  ai-interpreter:
+    build: .
+    image: viscan-ai-interpreter:latest
+    container_name: viscan-ai-interpreter
+    env_file:
+      - .env
+    volumes:
+      - viscan-interpreter-data:/data
+    ports:
+      - "5050:5050"
+    restart: unless-stopped
+
+volumes:
+  viscan-interpreter-data:

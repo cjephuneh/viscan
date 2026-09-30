@@ -1,27 +1,53 @@
-services:
-  backend:
-    build: .
-    image: viscan-backend:latest
-    env_file:
-      - .env
-    volumes:
-      - viscan-data:/data
-    ports:
-      - "5050:5050"
-    restart: unless-stopped
+version: '3.8'
 
+services:
+  # -------------------------------------------------------------
+  # 1. Frontend: Next.js Clinician & Patient Workstation
+  # -------------------------------------------------------------
   frontend:
     build: ./frontend
     image: viscan-frontend:latest
+    container_name: viscan-frontend
     environment:
-      VISCAN_API_URL: http://backend:5050
+      VISCAN_API_URL: http://ai-interpreter:5050
       VISCAN_API_KEY: ${VISCAN_API_KEY:-}
     ports:
       - "3000:3000"
     depends_on:
-      backend:
-        condition: service_healthy
+      - ai-interpreter
+    restart: unless-stopped
+
+  # -------------------------------------------------------------
+  # 2. AI Interpreter: VIA Cervical Screening & Rules Engine
+  # -------------------------------------------------------------
+  ai-interpreter:
+    build: ./ai-interpreter
+    image: viscan-ai-interpreter:latest
+    container_name: viscan-ai-interpreter
+    env_file:
+      - ./ai-interpreter/.env
+    volumes:
+      - viscan-interpreter-data:/data
+    ports:
+      - "5050:5050"
+    networks:
+      default:
+        aliases:
+          - backend
+    restart: unless-stopped
+
+  # -------------------------------------------------------------
+  # 3. AI Avatar: Clinical Video Reporting via Anam AI
+  # -------------------------------------------------------------
+  ai-avatar:
+    build: ./ai-avatar
+    image: viscan-ai-avatar:latest
+    container_name: viscan-ai-avatar
+    env_file:
+      - ./ai-avatar/.env
+    ports:
+      - "9090:9090"
     restart: unless-stopped
 
 volumes:
-  viscan-data:
+  viscan-interpreter-data:
