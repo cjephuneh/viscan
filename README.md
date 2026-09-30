@@ -119,6 +119,11 @@ entrypoint and routes to the four services (see [`nginx/nginx.conf`](./nginx/ngi
 VIA images are stored in the S3-compatible **MinIO** bucket `via-images` (prefixes `interpreter/` and `backend/`), configured through
 `S3_*` in the root `.env` (see [`.env.example`](./.env.example)). Without `S3_ENDPOINT` the services fall back to local disk.
 
+**Domain & HTTPS:** the gateway serves `https://viscan.site` (set `DOMAIN` / `CERTBOT_EMAIL` in the root `.env`). A `certbot`
+sidecar waits until the domain resolves in DNS, obtains a Let's Encrypt certificate through the gateway and renews it; nginx
+switches from its self-signed placeholder to the real certificate automatically (`nginx/40-viscan-tls.sh`). `http://` and `www`
+redirect to `https://viscan.site`; access by raw IP stays on HTTP. Required DNS: `A viscan.site` and `A www.viscan.site` → server IP.
+
 **How a deploy happens** (no secrets are stored in GitHub):
 
 1. Push to `main` → GitHub Actions runs all test suites.
