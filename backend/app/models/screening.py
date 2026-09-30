@@ -4,7 +4,10 @@ from app.utils.time import utcnow
 SCREENING_STATUSES = (
     "CREATED",
     "IMAGE_UPLOADED",
+    "QUEUED",
+    "ANALYZING",
     "ANALYZED",
+    "ANALYSIS_FAILED",
     "REVIEWED",
     "COMPLETED",
 )
@@ -32,6 +35,11 @@ class Screening(db.Model):
         "VIAImage",
         back_populates="screening",
         order_by="VIAImage.uploaded_at",
+    )
+    analysis_jobs = db.relationship(
+        "AnalysisJob",
+        back_populates="screening",
+        order_by="AnalysisJob.id",
     )
     assessment = db.relationship(
         "Assessment",

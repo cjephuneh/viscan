@@ -1,5 +1,5 @@
-# Optional local PostgreSQL. The shared development database is remote;
-# use DB_* in .env for that host. Do not start this if port 5432 is already taken.
+# Development PostgreSQL. Flask runs on the host and connects to localhost:5432.
+# Do not start this if port 5432 is already taken.
 services:
   db:
     image: postgres:16

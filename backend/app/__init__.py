@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, jsonify, redirect
 from flask_cors import CORS
 
 from app.config import CONFIGS
@@ -36,8 +36,28 @@ def create_app(config_name: str | None = None) -> Flask:
     register_error_handlers(app)
     register_blueprints(api, app)
 
+    @app.get("/")
+    @app.get("/api/v1/")
+    def api_index():
+        return jsonify(
+            {
+                "name": "VISCAN API",
+                "version": "v1",
+                "health": "/api/v1/health/",
+                "docs": "/api/v1/docs",
+                "openapi": "/api/v1/openapi.json",
+            }
+        )
+
+    @app.get("/api/v1/docs/")
+    def docs_with_slash():
+        return redirect("/api/v1/docs", code=308)
+
     # Ensure models are imported for metadata / migrations.
     from app import models  # noqa: F401
+    from app.services.analysis_worker import maybe_start_analysis_worker
+
+    maybe_start_analysis_worker(app)
 
     @app.cli.command("seed-facilities")
     def seed_facilities():

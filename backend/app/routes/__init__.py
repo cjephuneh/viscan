@@ -1,4 +1,5 @@
 from app.routes.ai_routes import blp as ai_blp
+from app.routes.queue_routes import blp as queue_blp
 from app.routes.assessment_routes import blp as assessment_blp
 from app.routes.facility_routes import blp as facility_blp
 from app.routes.health_routes import blp as health_blp
@@ -18,6 +19,7 @@ def register_blueprints(api, app) -> None:
     api.register_blueprint(screening_blp)
     api.register_blueprint(image_blp)
     api.register_blueprint(ai_blp)
+    api.register_blueprint(queue_blp)
     api.register_blueprint(assessment_blp)
     api.register_blueprint(maps_blp)
     api.register_blueprint(notification_blp)

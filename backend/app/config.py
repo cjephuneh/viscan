@@ -71,13 +71,26 @@ class BaseConfig:
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 
+    # One in-process worker drains analysis_jobs. The database still allows
+    # only one processing row if more than one API process is running.
+    QUEUE_WORKER_ENABLED = os.getenv("QUEUE_WORKER_ENABLED", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    QUEUE_POLL_SECONDS = float(os.getenv("QUEUE_POLL_SECONDS", "0.5"))
+    QUEUE_STALE_SECONDS = float(os.getenv("QUEUE_STALE_SECONDS", "120"))
+    QUEUE_MAX_ATTEMPTS = int(os.getenv("QUEUE_MAX_ATTEMPTS", "2"))
+
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = build_database_url()
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
-        "connect_args": {"connect_timeout": 10},
+        "connect_args": {"connect_timeout": 2},
+        "pool_timeout": 2,
     }
 
 
@@ -107,6 +120,8 @@ class TestingConfig(BaseConfig):
     LANGUAGE_API_URL = ""
     VOICE_API_KEY = ""
     VOICE_API_URL = ""
+    QUEUE_WORKER_ENABLED = False
+    QUEUE_POLL_SECONDS = 0.05
 
 
 CONFIGS = {

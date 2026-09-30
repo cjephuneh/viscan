@@ -13,6 +13,11 @@ class VIAImage(db.Model):
     uploaded_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
 
     screening = db.relationship("Screening", back_populates="images")
+    analysis_jobs = db.relationship(
+        "AnalysisJob",
+        back_populates="via_image",
+        order_by="AnalysisJob.id",
+    )
     ai_results = db.relationship(
         "AIResult",
         back_populates="via_image",

@@ -8,8 +8,8 @@ from app.extensions import db
 from app.models import Screening, VIAImage
 from app.schemas.common import DetailSchema
 from app.schemas.via_image import VIAImageSchema
+from app.services.queue_service import enqueue_image
 from app.utils.images import resolve_image_path, validate_and_store_image
-from app.utils.time import utcnow
 
 blp = Blueprint(
     "images",
@@ -54,10 +54,9 @@ class ScreeningImageUpload(MethodView):
             media_type=media_type,
             file_size_bytes=size,
         )
-        screening.status = "IMAGE_UPLOADED"
-        screening.updated_at = utcnow()
         db.session.add(image)
-        db.session.commit()
+        db.session.flush()
+        enqueue_image(image)
         return image
 
 

@@ -5,18 +5,24 @@ AI-assisted VIA cervical screening API. The frontend talks to this Flask service
 ## Requirements
 
 - Python 3.11
-- PostgreSQL 16 (shared remote development database)
+- Docker, for PostgreSQL 16. The Flask app itself runs on the host.
+
+The Flask service lives in this `backend` directory.
 
 ## Quick start
 
+From the repository root:
+
 ```cmd
+cd backend
+docker compose up -d
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
 ```
 
-Edit `.env` with the shared PostgreSQL host, user, password, and `DB_SSLMODE=disable`. Secrets stay in `.env` only (never commit it).
+`.env.example` already points at the Docker database on `localhost:5432`. Secrets stay in `.env` only (never commit it).
 
 Start the API on port **8080**:
 
@@ -24,7 +30,7 @@ Start the API on port **8080**:
 python run.py
 ```
 
-- API base: `http://localhost:8080/api/v1/`
+- API index: `http://localhost:8080/api/v1/`
 - Health: `http://localhost:8080/api/v1/health/`
 - OpenAPI / Swagger UI: `http://localhost:8080/api/v1/docs`
 
@@ -32,15 +38,15 @@ Listen address is `0.0.0.0:8080` so other machines on the network can reach the 
 
 ## Database
 
-Development uses the remote PostgreSQL host configured via `DB_*` in `.env` (host `16.192.134.200`, port `5432`, SSL off). Set `DB_SSLMODE=disable` before connecting. Optional local Docker Postgres is available in `docker-compose.yml` if you need an isolated database and port `5432` is free.
+PostgreSQL runs in Docker. Flask runs on the host and connects through `DB_*` in `.env` (`localhost`, port `5432`, database `viscan`, SSL off). The container publishes that port; the API is not inside Docker.
 
-The shared database already contains `cervical_avatar_reports`. These phases add the VISCAN tables beside it and leave that table unchanged.
+`docker compose up -d` starts only the database. Apply the schema from the host with `flask db upgrade`.
 
 The chain below is the schema history. Apply it with `flask db upgrade`.
 
 ### How each phase is committed
 
-The chain is linear and applied on the real database, so there is one Alembic head and revisions do not fork.
+The chain is linear and applied on the Docker database from the host, so there is one Alembic head and revisions do not fork.
 
 Each phase is one file in `migrations/versions/` and one git commit. `down_revision` is always the previous phase's revision id.
 
@@ -48,7 +54,7 @@ For each phase:
 
 1. Add only that phase's revision file.
 2. Commit that file by itself, using the commit message in the table.
-3. Apply it on the real database:
+3. Apply it on the Docker database from the host:
 
 ```cmd
 flask db upgrade
@@ -72,6 +78,7 @@ A revision that is already committed and upgraded stays as written. Later work i
 | 8 | `008_ai_result_index` | index `ix_ai_results_via_image_id` | index ai results by image |
 | 9 | `009_assessments` | `assessments`, one row per screening | add clinician assessments |
 | 10 | `010_seed_facilities` | District Hospital and Health Centre, inserted only when missing | seed starter facilities |
+| 11 | `011_analysis_jobs` | `analysis_jobs` queue, one processing job and one active job per image | add analysis jobs queue |
 
 Phase 10 is the data migration for the two starter facilities. `flask seed-facilities` remains for resetting a local database.
 
@@ -83,10 +90,12 @@ Phase 10 is the data migration for the two starter facilities. `flask seed-facil
 | GET/POST | `/api/v1/facilities/` | Facilities |
 | GET/POST | `/api/v1/screenings/` | List / create screenings |
 | GET/PATCH | `/api/v1/screenings/{id}/` | Screening detail / update |
-| POST | `/api/v1/screenings/{id}/images/` | Multipart VIA image upload (`file`) |
-| GET | `/api/v1/images/{id}/` | Image metadata |
+| POST | `/api/v1/screenings/{id}/images/` | Multipart VIA image upload (`file`). Stores the file and places it on the analysis queue. |
+| GET | `/api/v1/images/{id}/` | Image metadata, including its queue job |
 | GET | `/api/v1/images/{id}/file` | Image bytes |
-| POST | `/api/v1/screenings/{id}/analyze/` | Call AI service via Flask |
+| POST | `/api/v1/screenings/{id}/analyze/` | Queue the latest image. Returns `202` and the job. If that image is already queued or processing, returns the same job. |
+| GET | `/api/v1/analysis-queue/` | The image being analyzed, images waiting, and recently finished jobs |
+| GET | `/api/v1/analysis-jobs/{id}/` | One job. Poll until `completed` or `failed`; `ai_result` is set when analysis finishes. |
 | GET | `/api/v1/ai-results/{id}/` | Stored AI result |
 | POST/GET/PATCH | `/api/v1/screenings/{id}/assessment/` | Clinician assessment |
 | GET | `/api/v1/maps/facilities/nearby` | Nearby facilities |
@@ -97,6 +106,16 @@ Phase 10 is the data migration for the two starter facilities. `flask seed-facil
 
 Errors use a consistent body: `{"detail": "..."}`.
 
+## Analysis queue
+
+Uploading an image does not wait for the AI service. The API stores the file, inserts an `analysis_jobs` row with status `queued`, and returns. A worker inside the API process then takes the oldest queued image, marks it `processing`, calls the AI service, and only then takes the next image.
+
+While one image is `processing`, further uploads stay in `queued` with `ahead` set to how many images must finish first. `GET /api/v1/analysis-queue/` is the live view of that line. The database allows only one `processing` row, so a second API process cannot run a second analysis at the same time.
+
+Screening status follows the queue: `QUEUED`, then `ANALYZING`, then `ANALYZED` or `ANALYSIS_FAILED`. A failed job does not block the images behind it. `POST .../analyze/` queues the latest image again after a failure.
+
+The worker starts with the API. Set `QUEUE_WORKER_ENABLED=false` to leave jobs queued until something else calls the worker. A processing job that outlives the AI timeout is put back on the queue, and after `QUEUE_MAX_ATTEMPTS` it is marked failed so the line cannot stall.
+
 ## Tests
 
 ```cmd
@@ -106,6 +125,8 @@ pytest
 Tests use an in-memory SQLite database and do not require PostgreSQL.
 
 ## Project layout
+
+Paths below are inside `backend/`.
 
 ```text
 app/

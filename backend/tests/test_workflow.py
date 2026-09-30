@@ -93,9 +93,15 @@ def test_image_upload_and_workflow(client, facility, app):
     assert upload.status_code == 201
     image = upload.get_json()
     assert image["media_type"] == "image/png"
+    assert image["analysis_job"]["status"] == "queued"
+    assert image["analysis_job"]["ahead"] == 0
 
     status = client.get(f"/api/v1/screenings/{screening['id']}/").get_json()["status"]
-    assert status == "IMAGE_UPLOADED"
+    assert status == "QUEUED"
+
+    analyze = client.post(f"/api/v1/screenings/{screening['id']}/analyze/")
+    assert analyze.status_code == 202
+    assert analyze.get_json()["id"] == image["analysis_job"]["id"]
 
     ai_payload = {
         "prediction": "abnormal",
@@ -109,10 +115,14 @@ def test_image_upload_and_workflow(client, facility, app):
 
     with patch("app.services.ai_service.httpx.Client") as client_cls:
         client_cls.return_value.__enter__.return_value.post.return_value = mock_response
-        analyze = client.post(f"/api/v1/screenings/{screening['id']}/analyze/")
+        with app.app_context():
+            from app.services.queue_service import process_next
 
-    assert analyze.status_code == 201
-    result = analyze.get_json()
+            assert process_next() is True
+
+    job = client.get(f"/api/v1/analysis-jobs/{image['analysis_job']['id']}/")
+    assert job.status_code == 200
+    result = job.get_json()["ai_result"]
     assert result["prediction"] == "abnormal"
     assert result["confidence"] == 0.91
 
@@ -157,16 +167,17 @@ def test_invalid_image_rejected(client, facility):
     assert "detail" in response.get_json()
 
 
-def test_ai_unavailable(client, facility):
+def test_ai_unavailable(client, facility, app):
     screening = client.post(
         "/api/v1/screenings/",
         json={"facility_id": facility, "patient_code": "VIA-000013"},
     ).get_json()
-    client.post(
+    upload = client.post(
         f"/api/v1/screenings/{screening['id']}/images/",
         data={"file": (io.BytesIO(_png_bytes()), "via.png")},
         content_type="multipart/form-data",
     )
+    job_id = upload.get_json()["analysis_job"]["id"]
 
     import httpx
 
@@ -174,10 +185,17 @@ def test_ai_unavailable(client, facility):
         client_cls.return_value.__enter__.return_value.post.side_effect = httpx.ConnectError(
             "down"
         )
-        response = client.post(f"/api/v1/screenings/{screening['id']}/analyze/")
+        with app.app_context():
+            from app.services.queue_service import process_next
 
-    assert response.status_code == 503
-    assert response.get_json()["detail"] == "AI service is unavailable."
+            assert process_next() is True
+
+    job = client.get(f"/api/v1/analysis-jobs/{job_id}/")
+    assert job.status_code == 200
+    assert job.get_json()["status"] == "failed"
+    assert job.get_json()["error_detail"] == "AI service is unavailable."
+    screening_status = client.get(f"/api/v1/screenings/{screening['id']}/").get_json()["status"]
+    assert screening_status == "ANALYSIS_FAILED"
 
 
 def test_notification_and_language_stubs(client):
@@ -289,27 +307,33 @@ def test_invalid_request(client, facility):
     assert empty_update.get_json()["detail"] == "No fields provided for update."
 
 
-def test_ai_invalid_response(client, facility):
+def test_ai_invalid_response(client, facility, app):
     screening = client.post(
         "/api/v1/screenings/",
         json={"facility_id": facility, "patient_code": "VIA-000021"},
     ).get_json()
-    client.post(
-        f"/api/v1/screenings/{screening['id']}/images/",
-        data={"file": (io.BytesIO(_png_bytes()), "via.png")},
-        content_type="multipart/form-data",
-    )
 
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"prediction": "abnormal"}
 
+    upload = client.post(
+        f"/api/v1/screenings/{screening['id']}/images/",
+        data={"file": (io.BytesIO(_png_bytes()), "via.png")},
+        content_type="multipart/form-data",
+    )
+    job_id = upload.get_json()["analysis_job"]["id"]
+
     with patch("app.services.ai_service.httpx.Client") as client_cls:
         client_cls.return_value.__enter__.return_value.post.return_value = mock_response
-        response = client.post(f"/api/v1/screenings/{screening['id']}/analyze/")
+        with app.app_context():
+            from app.services.queue_service import process_next
 
-    assert response.status_code == 502
-    assert response.get_json()["detail"] == "AI service returned an incomplete response."
+            assert process_next() is True
+
+    job = client.get(f"/api/v1/analysis-jobs/{job_id}/").get_json()
+    assert job["status"] == "failed"
+    assert job["error_detail"] == "AI service returned an incomplete response."
 
 
 def test_health_database_error(client):
@@ -353,7 +377,29 @@ def test_invalid_assessment(client, facility):
     assert missing.status_code == 404
 
 
+def test_api_index(client):
+    expected = {
+        "name": "VISCAN API",
+        "version": "v1",
+        "health": "/api/v1/health/",
+        "docs": "/api/v1/docs",
+        "openapi": "/api/v1/openapi.json",
+    }
+    for path in ("/", "/api/v1/"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.get_json() == expected
+
+    redirected = client.get("/api/v1")
+    assert redirected.status_code == 308
+    assert redirected.headers["Location"].endswith("/api/v1/")
+
+
 def test_openapi_available(client):
     response = client.get("/api/v1/openapi.json")
     assert response.status_code == 200
     assert response.get_json()["info"]["title"] == "VISCAN API"
+
+    docs = client.get("/api/v1/docs/")
+    assert docs.status_code == 308
+    assert docs.headers["Location"].endswith("/api/v1/docs")
