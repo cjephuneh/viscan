@@ -1,0 +1,27 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "Frontend",
+    "ai_interprator",
+    "backend",
+    "itbienvenu",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "Frontend": "main",
+    "ai_interprator": "main",
+    "backend": "main",
+    "itbienvenu": "main",
+    "main": null,
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "Frontend",
+    "ai_interprator",
+    "backend",
+    "itbienvenu",
+    "origin"
+  ]
+}
