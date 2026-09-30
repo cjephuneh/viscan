@@ -1,0 +1,2 @@
+tests/test_analysis_queue.py::test_database_allows_only_one_processing_job
+passed
