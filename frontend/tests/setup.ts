@@ -17,3 +17,4 @@ Object.defineProperty(URL, "revokeObjectURL", {
 });
 
 Element.prototype.scrollIntoView = vi.fn();
+window.scrollTo = vi.fn();

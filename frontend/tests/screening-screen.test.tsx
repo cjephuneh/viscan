@@ -164,6 +164,39 @@ describe("ScreeningScreen", () => {
     expect(screen.queryByText("Before acetic acid (baseline)")).not.toBeInTheDocument();
   });
 
+  it("offers two steps on small screens: patient details, then image & result", async () => {
+    const { container } = render(<ScreeningScreen />);
+    const page = container.querySelector(".page")!;
+    const steps = screen.getByRole("navigation", { name: "Screening steps" });
+    expect(page.className).toContain("tab-patient");
+    expect(steps.querySelector('[aria-current="step"]')).toHaveTextContent("Patient");
+
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    expect(steps).toHaveTextContent("ID PT-1");
+
+    fireEvent.click(screen.getByRole("button", { name: /Next: add the image/ }));
+    expect(page.className).toContain("tab-image");
+    expect(steps.querySelector('[aria-current="step"]')).toHaveTextContent("Image & result");
+
+    uploadImage(container);
+    expect(steps).toHaveTextContent("Image added");
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    await screen.findByRole("button", { name: "Confirm this finding" });
+    expect(steps).toHaveTextContent("Result ready");
+
+    fireEvent.click(screen.getByRole("button", { name: /^1 Patient/ }));
+    expect(page.className).toContain("tab-patient");
+  });
+
+  it("returns to the patient step when the patient ID is missing on read", async () => {
+    const { container } = render(<ScreeningScreen />);
+    fireEvent.click(screen.getByRole("button", { name: /Next: add the image/ }));
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    expect(container.querySelector(".page")!.className).toContain("tab-patient");
+    expect(screen.getByText("Add the patient ID before reading the image.")).toBeInTheDocument();
+  });
+
   it("records the other finding and hides the referral link when not suspicious", async () => {
     const { container } = render(<ScreeningScreen />);
     typeInto(screen.getByLabelText("Patient ID"), "PT-1");

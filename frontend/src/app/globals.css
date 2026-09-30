@@ -4151,3 +4151,116 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* Small screens: the screening page becomes two steps instead of one long scroll. */
+.mobile-tabs,
+.mobile-only {
+  display: none;
+}
+
+.patient-step {
+  display: grid;
+  gap: 18px;
+}
+
+@media (max-width: 900px) {
+  .mobile-tabs {
+    position: sticky;
+    top: 8px;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    box-shadow: 0 8px 24px rgba(28, 43, 51, 0.08);
+  }
+
+  .mobile-tabs button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .mobile-tabs button.on {
+    background: var(--accent);
+    color: #f4fbfc;
+  }
+
+  .mobile-tabs .tab-index {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .mobile-tabs button.on .tab-index {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+  }
+
+  .mobile-tabs button > span:last-child {
+    display: grid;
+    line-height: 1.2;
+  }
+
+  .mobile-tabs strong {
+    font-size: 0.95rem;
+    color: inherit;
+  }
+
+  .mobile-tabs small {
+    font-size: 0.78rem;
+    opacity: 0.85;
+  }
+
+  .mobile-only {
+    display: block;
+  }
+
+  .step-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 4px;
+  }
+
+  .step-actions .primary {
+    width: 100%;
+  }
+
+  /* Shorter header on phones: the step control replaces the flow strip and the CTA. */
+  .hero-lede,
+  .hero-aside,
+  .hero-actions {
+    display: none;
+  }
+
+  .hero {
+    gap: 12px;
+  }
+
+  /* Show only the active step. */
+  .page.tab-patient .stage {
+    display: none;
+  }
+
+  .page.tab-image .patient-step {
+    display: none;
+  }
+}

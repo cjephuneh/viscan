@@ -154,6 +154,9 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   const [apiError, setApiError] = useState("");
   const [notes, setNotes] = useState("");
   const [finalVia, setFinalVia] = useState<ViaResult | null>(null);
+  // Small screens show the page as two steps (patient details / image & result)
+  // instead of one long scroll. Desktop ignores this (CSS media query).
+  const [mobileTab, setMobileTab] = useState<"patient" | "image">("patient");
   const [confirming, setConfirming] = useState(false);
   const [intake, setIntake] = useState<Intake | null>(null);
   const [coachOpen, setCoachOpen] = useState(false);
@@ -294,6 +297,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
     if (!file) return;
     if (!visit.patientId.trim()) {
       setPatientError("Add the patient ID before reading the image.");
+      setMobileTab("patient");
       patientRef.current?.focus();
       return;
     }
@@ -338,11 +342,29 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   }
 
   function focusUpload() {
+    setMobileTab("image");
     uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     inputRef.current?.focus();
   }
 
+  function goToImages() {
+    setMobileTab("image");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+
+
   const imageReady = Boolean(previewUrl);
+  const imageTabHint =
+    phase === "confirmed"
+      ? "Confirmed"
+      : phase === "result"
+        ? "Result ready"
+        : phase === "reading"
+          ? "Reading…"
+          : imageReady
+            ? "Image added"
+            : "Add the image";
   const shownVerdict = finalVia ? viaToVerdict(finalVia) : result?.verdict.screening_verdict;
   const tone = verdictTone(shownVerdict);
   const other = result ? otherFinding(result.verdict.via_result) : null;
@@ -368,8 +390,35 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             : "Waiting for an image";
 
   return (
-    <div className={coachOpen && result ? "page with-coach" : "page"}>
+    <div className={`page ${coachOpen && result ? "with-coach " : ""}tab-${mobileTab}`}>
       <div className="atmosphere" aria-hidden="true" />
+
+      <nav className="mobile-tabs" aria-label="Screening steps">
+        <button
+          type="button"
+          className={mobileTab === "patient" ? "on" : undefined}
+          aria-current={mobileTab === "patient" ? "step" : undefined}
+          onClick={() => setMobileTab("patient")}
+        >
+          <span className="tab-index">1</span>
+          <span>
+            <strong>Patient</strong>
+            <small>{visit.patientId.trim() ? `ID ${visit.patientId.trim()}` : "Details for this visit"}</small>
+          </span>
+        </button>
+        <button
+          type="button"
+          className={mobileTab === "image" ? "on" : undefined}
+          aria-current={mobileTab === "image" ? "step" : undefined}
+          onClick={() => setMobileTab("image")}
+        >
+          <span className="tab-index">2</span>
+          <span>
+            <strong>Image &amp; result</strong>
+            <small>{imageTabHint}</small>
+          </span>
+        </button>
+      </nav>
 
       <header className="hero">
         <div className="hero-copy">
@@ -402,6 +451,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
         </aside>
       </header>
 
+      <div className="patient-step">
       {intake ? <IntakeSummary intake={intake} onClear={() => selectIntake(null)} /> : <CheckedInPatients onSelect={selectIntake} />}
 
       <section className="session visit" aria-label="Visit details">
@@ -502,7 +552,14 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             </label>
           ))}
         </fieldset>
+
+        <div className="mobile-only step-actions">
+          <button type="button" className="primary" onClick={goToImages}>
+            Next: add the image →
+          </button>
+        </div>
       </section>
+      </div>
 
       <main className="stage">
         <section ref={uploadRef} className="panel" aria-labelledby="capture-title" tabIndex={-1}>
