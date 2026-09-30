@@ -1,0 +1,21 @@
+# Optional local PostgreSQL. The shared development database is remote;
+# use DB_* in .env for that host. Do not start this if port 5432 is already taken.
+services:
+  db:
+    image: postgres:16
+    container_name: viscan_db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: viscan
+      POSTGRES_USER: viscan_admin
+      POSTGRES_PASSWORD: viscan_password
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
