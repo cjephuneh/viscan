@@ -6,27 +6,24 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install system dependencies if required for compiling C extensions
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
+# Install Python dependencies (all packages have pre-compiled manylinux wheels)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application source code
+# Copy application source code and test suite
 COPY . .
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Expose port 9090 as required
 EXPOSE 9090
 
-# Health check to ensure service is responding
+# Native Python health check without requiring curl or apt-get
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:9090/health || exit 1
+    CMD python -c "import http.client; c = http.client.HTTPConnection('localhost', 9090, timeout=3); c.request('GET', '/health'); r = c.getresponse(); exit(0 if r.status == 200 else 1)"
 
-# Start Uvicorn server on port 9090
+# Entrypoint supporting test execution and server launch
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
+# Default: Start Uvicorn server on port 9090
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9090"]
