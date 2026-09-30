@@ -33,11 +33,20 @@ def _validate_ai_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(processing_time_ms, int) or processing_time_ms < 0:
         raise APIError("AI service returned an invalid processing time.", 502)
 
+    recommendation = payload.get("recommendation")
+    if recommendation is None or (isinstance(recommendation, str) and not recommendation.strip()):
+        recommendation_text = None
+    elif isinstance(recommendation, str):
+        recommendation_text = recommendation.strip()[:1000]
+    else:
+        raise APIError("AI service returned an invalid recommendation.", 502)
+
     return {
         "prediction": prediction.strip(),
         "confidence": float(confidence),
         "model_version": model_version.strip(),
         "processing_time_ms": processing_time_ms,
+        "recommendation": recommendation_text,
     }
 
 

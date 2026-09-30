@@ -23,6 +23,8 @@ class Screening(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     facility_id = db.Column(db.Integer, db.ForeignKey("facilities.id"), nullable=False)
     patient_code = db.Column(db.String(32), nullable=False)
+    phone = db.Column(db.String(16), nullable=True)
+    notify_channel = db.Column(db.String(16), nullable=True)
     screening_date = db.Column(db.Date, nullable=False)
     status = db.Column(db.String(32), nullable=False, default="CREATED", server_default="CREATED")
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)

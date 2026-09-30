@@ -1,12 +1,20 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
+from flask import current_app
+
 from app.errors import APIError
 from app.extensions import db
 from app.models import Assessment, Screening
 from app.schemas.assessment import AssessmentSchema, AssessmentUpdateSchema
 from app.schemas.common import DetailSchema
+from app.services import patient_notify_service
 from app.utils.time import utcnow
+from marshmallow import fields
+
+
+class AssessmentNotifySchema(AssessmentSchema):
+    notification = fields.Raw(allow_none=True)
 
 blp = Blueprint(
     "assessments",
@@ -34,7 +42,7 @@ class ScreeningAssessment(MethodView):
         return screening.assessment
 
     @blp.arguments(AssessmentSchema)
-    @blp.response(201, AssessmentSchema)
+    @blp.response(201, AssessmentNotifySchema)
     @blp.alt_response(400, schema=DetailSchema)
     @blp.alt_response(404, schema=DetailSchema)
     @blp.alt_response(409, schema=DetailSchema)
@@ -52,6 +60,19 @@ class ScreeningAssessment(MethodView):
         screening.updated_at = utcnow()
         db.session.add(assessment)
         db.session.commit()
+
+        notification = None
+        if screening.phone and screening.notify_channel:
+            try:
+                notification = patient_notify_service.notify_patient(screening)
+            except APIError as exc:
+                current_app.logger.warning(
+                    "patient notify skipped for screening %s: %s",
+                    screening.id,
+                    getattr(exc, "detail", str(exc)),
+                )
+
+        assessment.notification = notification
         return assessment
 
     @blp.arguments(AssessmentUpdateSchema)

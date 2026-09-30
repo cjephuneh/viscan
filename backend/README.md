@@ -79,8 +79,12 @@ A revision that is already committed and upgraded stays as written. Later work i
 | 9 | `009_assessments` | `assessments`, one row per screening | add clinician assessments |
 | 10 | `010_seed_facilities` | District Hospital and Health Centre, inserted only when missing | seed starter facilities |
 | 11 | `011_analysis_jobs` | `analysis_jobs` queue, one processing job and one active job per image | add analysis jobs queue |
+| 12 | `012_screening_contact` | `phone` and `notify_channel` on `screenings` | add screening patient contact |
+| 13 | `013_ai_recommendation` | `recommendation` on `ai_results` | add ai result recommendation |
 
 Phase 10 is the data migration for the two starter facilities. `flask seed-facilities` remains for resetting a local database.
+
+Patient notifications use the screening `phone` and `notify_channel` (`sms` or `whatsapp`). After a clinician assessment is saved, Flask sends an update on that channel when contact details are present. For positive or abnormal results, the message includes the latest AI `recommendation` when the model returned one; otherwise it uses a short follow-up default. `POST /api/v1/screenings/{id}/notify/` resends that message.
 
 ## Core workflow APIs
 
@@ -97,7 +101,8 @@ Phase 10 is the data migration for the two starter facilities. `flask seed-facil
 | GET | `/api/v1/analysis-queue/` | The image being analyzed, images waiting, and recently finished jobs |
 | GET | `/api/v1/analysis-jobs/{id}/` | One job. Poll until `completed` or `failed`; `ai_result` is set when analysis finishes. |
 | GET | `/api/v1/ai-results/{id}/` | Stored AI result |
-| POST/GET/PATCH | `/api/v1/screenings/{id}/assessment/` | Clinician assessment |
+| POST/GET/PATCH | `/api/v1/screenings/{id}/assessment/` | Clinician assessment. Creates a patient SMS/WhatsApp update when contact details are set. |
+| POST | `/api/v1/screenings/{id}/notify/` | Resend the patient update for the current assessment. |
 | GET | `/api/v1/maps/facilities/nearby` | Nearby facilities |
 | POST | `/api/v1/notifications/sms/` | SMS stub until provider keys are set |
 | POST | `/api/v1/notifications/whatsapp/` | WhatsApp stub |

@@ -82,7 +82,12 @@ def test_missing_facility(client):
 def test_image_upload_and_workflow(client, facility, app):
     screening = client.post(
         "/api/v1/screenings/",
-        json={"facility_id": facility, "patient_code": "VIA-000010"},
+        json={
+            "facility_id": facility,
+            "patient_code": "VIA-000010",
+            "phone": "+250788000010",
+            "notify_channel": "sms",
+        },
     ).get_json()
 
     upload = client.post(
@@ -108,6 +113,7 @@ def test_image_upload_and_workflow(client, facility, app):
         "confidence": 0.91,
         "model_version": "v1.0",
         "processing_time_ms": 842,
+        "recommendation": "Return for colposcopy within two weeks.",
     }
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -125,6 +131,7 @@ def test_image_upload_and_workflow(client, facility, app):
     result = job.get_json()["ai_result"]
     assert result["prediction"] == "abnormal"
     assert result["confidence"] == 0.91
+    assert result["recommendation"] == "Return for colposcopy within two weeks."
 
     stored = client.get(f"/api/v1/ai-results/{result['id']}/")
     assert stored.status_code == 200
@@ -135,12 +142,199 @@ def test_image_upload_and_workflow(client, facility, app):
         json={"result": "abnormal", "notes": "Clinician confirmed"},
     )
     assert assessment.status_code == 201
-    assert assessment.get_json()["result"] == "abnormal"
+    body = assessment.get_json()
+    assert body["result"] == "abnormal"
+    assert body["notification"]["channel"] == "sms"
+    assert body["notification"]["positive"] is True
+    assert "Return for colposcopy within two weeks." in body["notification"]["message"]
+    assert body["notification"]["delivery"]["provider"] == "stub"
 
     final = client.get(f"/api/v1/screenings/{screening['id']}/")
     assert final.status_code == 200
     assert final.get_json()["status"] == "REVIEWED"
     assert final.get_json()["assessment"]["result"] == "abnormal"
+    assert final.get_json()["phone"] == "+250788000010"
+
+    resend = client.post(f"/api/v1/screenings/{screening['id']}/notify/")
+    assert resend.status_code == 200
+    assert resend.get_json()["positive"] is True
+
+
+def test_patient_contact_requires_both_fields(client, facility):
+    missing_channel = client.post(
+        "/api/v1/screenings/",
+        json={
+            "facility_id": facility,
+            "patient_code": "VIA-000014",
+            "phone": "+250788000014",
+        },
+    )
+    assert missing_channel.status_code == 400
+    assert "notify_channel" in missing_channel.get_json()["detail"]
+
+    missing_phone = client.post(
+        "/api/v1/screenings/",
+        json={
+            "facility_id": facility,
+            "patient_code": "VIA-000015",
+            "notify_channel": "whatsapp",
+        },
+    )
+    assert missing_phone.status_code == 400
+    assert "phone" in missing_phone.get_json()["detail"]
+
+
+def _queue_ai_result(client, app, screening_id, ai_payload):
+    upload = client.post(
+        f"/api/v1/screenings/{screening_id}/images/",
+        data={"file": (io.BytesIO(_png_bytes()), "via.png")},
+        content_type="multipart/form-data",
+    )
+    assert upload.status_code == 201
+    job_id = upload.get_json()["analysis_job"]["id"]
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = ai_payload
+
+    with patch("app.services.ai_service.httpx.Client") as client_cls:
+        client_cls.return_value.__enter__.return_value.post.return_value = mock_response
+        with app.app_context():
+            from app.services.queue_service import process_next
+
+            assert process_next() is True
+
+    job = client.get(f"/api/v1/analysis-jobs/{job_id}/").get_json()
+    assert job["status"] == "completed"
+    return job["ai_result"]
+
+
+def test_patient_notify_whatsapp_with_recommendation(client, facility, app):
+    screening = client.post(
+        "/api/v1/screenings/",
+        json={
+            "facility_id": facility,
+            "patient_code": "VIA-000040",
+            "phone": "+250788000040",
+            "notify_channel": "whatsapp",
+        },
+    ).get_json()
+
+    result = _queue_ai_result(
+        client,
+        app,
+        screening["id"],
+        {
+            "prediction": "positive",
+            "confidence": 0.88,
+            "model_version": "v1.0",
+            "processing_time_ms": 500,
+            "recommendation": "Schedule colposcopy within 14 days.",
+        },
+    )
+    assert result["recommendation"] == "Schedule colposcopy within 14 days."
+
+    assessment = client.post(
+        f"/api/v1/screenings/{screening['id']}/assessment/",
+        json={"result": "positive", "notes": "Confirmed"},
+    )
+    assert assessment.status_code == 201
+    body = assessment.get_json()
+    assert body["notification"]["channel"] == "whatsapp"
+    assert body["notification"]["to"] == "+250788000040"
+    assert body["notification"]["positive"] is True
+    assert "Schedule colposcopy within 14 days." in body["notification"]["message"]
+    assert body["notification"]["delivery"]["provider"] == "stub"
+
+    resend = client.post(f"/api/v1/screenings/{screening['id']}/notify/")
+    assert resend.status_code == 200
+    assert resend.get_json()["channel"] == "whatsapp"
+    assert resend.get_json()["positive"] is True
+
+
+def test_patient_notify_positive_uses_default_recommendation(client, facility, app):
+    screening = client.post(
+        "/api/v1/screenings/",
+        json={
+            "facility_id": facility,
+            "patient_code": "VIA-000041",
+            "phone": "+250788000041",
+            "notify_channel": "sms",
+        },
+    ).get_json()
+
+    result = _queue_ai_result(
+        client,
+        app,
+        screening["id"],
+        {
+            "prediction": "abnormal",
+            "confidence": 0.8,
+            "model_version": "v1.0",
+            "processing_time_ms": 400,
+        },
+    )
+    assert result.get("recommendation") in (None, "")
+
+    assessment = client.post(
+        f"/api/v1/screenings/{screening['id']}/assessment/",
+        json={"result": "abnormal"},
+    )
+    assert assessment.status_code == 201
+    notification = assessment.get_json()["notification"]
+    assert notification["positive"] is True
+    assert "Please return to your health facility for follow-up." in notification["message"]
+    assert "Recommendation:" in notification["message"]
+
+
+def test_patient_notify_normal_omits_recommendation(client, facility):
+    screening = client.post(
+        "/api/v1/screenings/",
+        json={
+            "facility_id": facility,
+            "patient_code": "VIA-000042",
+            "phone": "+250788000042",
+            "notify_channel": "sms",
+        },
+    ).get_json()
+
+    before = client.post(f"/api/v1/screenings/{screening['id']}/notify/")
+    assert before.status_code == 400
+    assert "Assessment is required" in before.get_json()["detail"]
+
+    assessment = client.post(
+        f"/api/v1/screenings/{screening['id']}/assessment/",
+        json={"result": "normal", "notes": "Clear"},
+    )
+    assert assessment.status_code == 201
+    notification = assessment.get_json()["notification"]
+    assert notification["channel"] == "sms"
+    assert notification["positive"] is False
+    assert "Clinician result: normal." in notification["message"]
+    assert "Recommendation:" not in notification["message"]
+
+    resend = client.post(f"/api/v1/screenings/{screening['id']}/notify/")
+    assert resend.status_code == 200
+    assert resend.get_json()["positive"] is False
+    assert "Recommendation:" not in resend.get_json()["message"]
+
+
+def test_patient_notify_requires_contact(client, facility):
+    screening = client.post(
+        "/api/v1/screenings/",
+        json={"facility_id": facility, "patient_code": "VIA-000043"},
+    ).get_json()
+
+    assessment = client.post(
+        f"/api/v1/screenings/{screening['id']}/assessment/",
+        json={"result": "abnormal"},
+    )
+    assert assessment.status_code == 201
+    assert assessment.get_json().get("notification") is None
+
+    notify = client.post(f"/api/v1/screenings/{screening['id']}/notify/")
+    assert notify.status_code == 400
+    assert "phone and notify_channel" in notify.get_json()["detail"]
 
 
 def test_analyze_without_image(client, facility):

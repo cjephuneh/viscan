@@ -304,6 +304,7 @@ def _finish_job(
             confidence=payload["confidence"],
             model_version=payload["model_version"],
             processing_time_ms=payload["processing_time_ms"],
+            recommendation=payload.get("recommendation"),
         )
         db.session.add(result)
         db.session.flush()

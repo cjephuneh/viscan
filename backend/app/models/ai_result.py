@@ -13,6 +13,7 @@ class AIResult(db.Model):
     confidence = db.Column(db.Float, nullable=False)
     model_version = db.Column(db.String(64), nullable=False)
     processing_time_ms = db.Column(db.Integer, nullable=False)
+    recommendation = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
 
     via_image = db.relationship("VIAImage", back_populates="ai_results")
