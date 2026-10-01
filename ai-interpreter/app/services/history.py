@@ -39,16 +39,20 @@ def _int(value, field, default, lo, hi):
 
 
 def _filtered(args):
+    # Join only ViaImage/Patient (1:1 with the interpretation). Intake is filtered
+    # via a subquery so we never need SELECT DISTINCT over JSON columns — Postgres
+    # rejects that (`could not identify an equality operator for type json`).
     query = (AIInterpretation.query
              .join(ViaImage, AIInterpretation.image_id == ViaImage.id)
-             .outerjoin(Patient, ViaImage.patient_id == Patient.id)
-             .outerjoin(IntakeSession, IntakeSession.interpretation_id == AIInterpretation.id))
+             .outerjoin(Patient, ViaImage.patient_id == Patient.id))
 
     q = (args.get("q") or "").strip()
     if q:
         like = f"%{q}%"
-        conditions = [Patient.external_id.ilike(like), IntakeSession.full_name.ilike(like),
-                      IntakeSession.code.ilike(like), ViaImage.site.ilike(like)]
+        intake_ids = (db.session.query(IntakeSession.interpretation_id)
+                      .filter(or_(IntakeSession.full_name.ilike(like), IntakeSession.code.ilike(like))))
+        conditions = [Patient.external_id.ilike(like), ViaImage.site.ilike(like),
+                      AIInterpretation.id.in_(intake_ids)]
         if q.lstrip("#").isdigit():
             conditions.append(AIInterpretation.id == int(q.lstrip("#")))
         query = query.filter(or_(*conditions))
@@ -170,7 +174,7 @@ def list_screenings(args) -> dict:
     page = _int(args.get("page"), "page", 1, 1, 100000)
     per_page = _int(args.get("per_page"), "per_page", 20, 1, 100)
 
-    query = _filtered(args).distinct()
+    query = _filtered(args)
     order = {
         "newest": [AIInterpretation.created_at.desc(), AIInterpretation.id.desc()],
         "oldest": [AIInterpretation.created_at.asc(), AIInterpretation.id.asc()],
