@@ -8,6 +8,8 @@ teaching cards, trace lesions on a clock face, build an action plan, quiz, and r
 import time
 from datetime import datetime, timezone
 
+from flask import current_app
+
 from ..models import AIInterpretation, CoachSession, IntakeSession, db
 from .avatar import AvatarUnavailable, _call
 from .intake import nurse_flags
@@ -107,8 +109,9 @@ def case_brief(interp: AIInterpretation) -> str:
 SYSTEM_PROMPT = """\
 # Who you are
 You are Kezia, the VIScan clinical coach: an AI trainer for nurses and clinicians who do VIA \
-(visual inspection with acetic acid) cervical screening in screen-and-treat programmes. You \
-sound like a senior nurse-educator: warm, practical, encouraging, precise. Say early on that you \
+(visual inspection with acetic acid) cervical screening in screen-and-treat programmes. You are \
+a woman and sound like a senior female nurse-educator: warm, practical, encouraging, precise. If \
+anyone asks, refer to yourself as she/her. Say early on that you \
 are an AI coach. You teach; you never replace the clinician's judgement, and every result must \
 be confirmed by the clinician. Base teaching on WHO guidance for cervical screening and \
 treatment (screen-and-treat, thermal ablation, cryotherapy, LEEP referral).
@@ -244,6 +247,46 @@ def coach_persona(cfg) -> dict:
     return persona
 
 
+_voice_cache: dict[str, tuple[float, str]] = {}
+PREFERRED_VOICE_COUNTRIES = ("KE", "RW", "UG", "TZ", "NG", "GH", "ZA", "GB", "US")
+
+
+def _female_voice_from_catalogue(cfg) -> str | None:
+    female = []
+    for page in range(1, 6):
+        data = _call(cfg, "GET", f"/voices?page={page}&perPage=100", timeout=15)
+        female += [v for v in data.get("data", []) if v.get("gender") == "FEMALE" and v.get("id")]
+        if page >= ((data.get("meta") or {}).get("lastPage") or 1):
+            break
+    if not female:
+        return None
+    rank = {c: i for i, c in enumerate(PREFERRED_VOICE_COUNTRIES)}
+    female.sort(key=lambda v: rank.get(v.get("country") or "", len(rank)))
+    return female[0]["id"]
+
+
+def coach_voice(cfg) -> str:
+    """Kezia is a woman: use the configured voice only if Anam lists it as female, otherwise pick one."""
+    configured = cfg.get("ANAM_COACH_VOICE_ID") or ""
+    cached = _voice_cache.get(configured)
+    if cached and time.time() - cached[0] < 3600:
+        return cached[1]
+    chosen = configured
+    try:
+        gender = _call(cfg, "GET", f"/voices/{configured}", timeout=15).get("gender") if configured else None
+    except AvatarUnavailable:
+        gender = "MISSING"
+    if gender not in ("FEMALE", None):
+        try:
+            chosen = _female_voice_from_catalogue(cfg) or configured
+        except AvatarUnavailable:
+            chosen = configured
+        if chosen != configured:
+            current_app.logger.warning("Coach voice %s is %s; using female voice %s instead.", configured, gender, chosen)
+    _voice_cache[configured] = (time.time(), chosen)
+    return chosen
+
+
 def _opening(interp: AIInterpretation | None) -> str:
     if interp is None:
         return ("Hi, I'm Kezia, your AI clinical coach. We can go over how to read VIA results, what to do "
@@ -262,7 +305,7 @@ def create_coach_token(cfg, session: CoachSession) -> dict:
         "name": persona["name"],
         "avatarId": cfg["ANAM_COACH_AVATAR_ID"],
         "avatarModel": cfg.get("ANAM_COACH_AVATAR_MODEL") or "cara-4",
-        "voiceId": cfg["ANAM_COACH_VOICE_ID"],
+        "voiceId": coach_voice(cfg),
         "llmId": cfg.get("ANAM_LLM_ID"),
         "systemPrompt": SYSTEM_PROMPT.format(case=case_brief(interp) if interp else PRACTICE_CASE),
         "initialMessage": _opening(interp),

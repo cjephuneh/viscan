@@ -844,6 +844,6 @@ Tables are created automatically on startup.
 | `ANAM_BASE_URL` | `https://api.anam.ai/v1` | Anam API base |
 | `ANAM_COACH_NAME` | `Kezia` | Coach display name |
 | `ANAM_COACH_AVATAR_ID` | Kezia's avatar | Anam avatar for the clinical coach |
-| `ANAM_COACH_VOICE_ID` | Bukola (warm, clear) | Anam voice for the coach |
+| `ANAM_COACH_VOICE_ID` | Jessica (female) | Anam voice for the coach. Checked against Anam before each lesson: if it isn't listed as female, a female voice is picked from the catalogue (African accents first) |
 | `ANAM_COACH_AVATAR_MODEL` | `cara-4` | Avatar model |
 | `SEED_DEMO_PARTNERS` | on | Seed demo partner hospitals when the table is empty |

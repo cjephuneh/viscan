@@ -500,9 +500,12 @@ def test_coach_token_briefs_the_case(client, monkeypatch):
         calls.append((method, path, body))
         if path.startswith("/avatars/"):
             return {"id": "av-k", "portraitImageUrl": "https://img/kezia"}
+        if path.startswith("/voices/"):
+            return {"id": "vo-k", "gender": "FEMALE"}
         return {"sessionToken": "coach-tok"}
 
     coach._avatar_cache.clear()
+    coach._voice_cache.clear()
     monkeypatch.setattr(coach, "_call", fake_call)
     client.application.config.update(ANAM_API_KEY="k", ANAM_COACH_AVATAR_ID="av-k", ANAM_COACH_VOICE_ID="vo-k")
     interp_id = upload(client, cervix_image(True), patient_external_id="PT-BRIEF", age="41").json["interpretation_id"]
@@ -523,8 +526,36 @@ def test_coach_token_briefs_the_case(client, monkeypatch):
 
     client.application.config.update(ANAM_API_KEY="")
     coach._avatar_cache.clear()
+    coach._voice_cache.clear()
     monkeypatch.undo()
     assert client.post(f"/api/v1/coach/sessions/{sid}/token").status_code == 503
+
+
+def test_coach_voice_is_always_female(client, monkeypatch):
+    from app.services import coach
+
+    catalogue = {"data": [
+        {"id": "male-ke", "gender": "MALE", "country": "KE"},
+        {"id": "female-us", "gender": "FEMALE", "country": "US"},
+        {"id": "female-ke", "gender": "FEMALE", "country": "KE"},
+    ], "meta": {"lastPage": 1}}
+
+    def fake_call(cfg, method, path, body=None, timeout=20):
+        if path == "/voices/man":
+            return {"id": "man", "gender": "MALE"}
+        if path == "/voices/woman":
+            return {"id": "woman", "gender": "FEMALE"}
+        if path.startswith("/voices?"):
+            return catalogue
+        raise coach.AvatarUnavailable("not found")
+
+    monkeypatch.setattr(coach, "_call", fake_call)
+    with client.application.app_context():
+        coach._voice_cache.clear()
+        assert coach.coach_voice({"ANAM_COACH_VOICE_ID": "woman"}) == "woman"
+        assert coach.coach_voice({"ANAM_COACH_VOICE_ID": "man"}) == "female-ke"
+        assert coach.coach_voice({"ANAM_COACH_VOICE_ID": "deleted"}) == "female-ke"
+    coach._voice_cache.clear()
 
 
 def test_patient_lookup_prefills_returning_patient(client):
