@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the ViScan Postgres backup once a day
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+RandomizedDelaySec=10min
+Unit=viscan-backup.service
+
+[Install]
+WantedBy=timers.target

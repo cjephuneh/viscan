@@ -161,6 +161,8 @@ One-time server setup: clone the repo to `/home/ubuntu/viscan`, create `.env`, `
 from their `.example` files, then `sudo ./scripts/install-server-deployer.sh`.
 Manual deploy / env sync from a laptop: `./scripts/deploy.sh` (`--env-only` to only copy env files).
 
+**Database backups on `gp5`:** a systemd timer runs [`scripts/backup-db.sh`](./scripts/backup-db.sh) daily at ~02:15 UTC and keeps 14 days of dumps in `/home/ubuntu/.viscan-backups/` (`viscan` + `app_db`). One-time install: `sudo ./scripts/install-server-backup.sh`. Restore: `./scripts/restore-db.sh viscan /home/ubuntu/.viscan-backups/viscan_YYYYMMDD_HHMMSS.sql.gz`.
+
 ---
 
 *Decision support only — a certified clinician must confirm every automated result.*
