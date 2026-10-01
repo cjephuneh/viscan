@@ -97,6 +97,8 @@ export type VideoReport = {
   status: VideoStatus;
   video_url: string | null;
   player_url: string | null;
+  /** Written narration available as soon as the report is created. */
+  generated_script?: string | null;
   duration_seconds: number | null;
   expires_at: string | null;
 };

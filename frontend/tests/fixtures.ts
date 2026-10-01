@@ -99,6 +99,8 @@ export function videoReportFixture(status: VideoReport["status"] = "completed"):
     status,
     video_url: done ? "https://videos.example/anam-vid-7.mp4" : null,
     player_url: "/player/viscan-7",
+    generated_script:
+      "Hello. This is your VIScan report.\n\nThe screening result is VIA positive.\n\nPlease attend the referral.",
     duration_seconds: done ? 62 : null,
     expires_at: null,
   };

@@ -101,6 +101,10 @@ class VideoStatusResponse(BaseModel):
     status: str = Field(..., description="Video rendering status: 'pending', 'running', 'completed', 'failed'")
     video_url: Optional[str] = Field(None, description="Direct playable MP4 video URL (usable in <video src=...>)")
     player_url: Optional[str] = Field(None, description="Ready-to-use HTML player page URL for iframes / previews")
+    generated_script: Optional[str] = Field(
+        None,
+        description="Written narration script available immediately; MP4 may still be rendering.",
+    )
     duration_seconds: Optional[float] = None
     expires_at: Optional[str] = None
     instructions: str = "Use video_url directly in HTML5 <video src=...> or player_url in an <iframe>."

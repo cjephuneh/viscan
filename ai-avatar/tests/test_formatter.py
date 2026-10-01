@@ -4,21 +4,19 @@ from app.schemas.avatar_report import ReportCreateRequest, ClinicalFindings
 
 
 def test_generate_narration_script_with_detailed_findings(sample_hsil_payload):
-    """Verify generated spoken script includes all clinical colposcopy findings."""
+    """Verify spoken script stays short but covers patient, result, key finding and next step."""
     req = ReportCreateRequest(**sample_hsil_payload)
     script = ClinicalFormatter.generate_narration_script(req)
 
     assert "PT-TEST-1001" in script
-    assert "SCAN-TEST-HSIL-001" in script
     assert "High-grade Squamous Intraepithelial Lesion (HSIL)" in script
     assert "94 percent" in script
-    assert "Type 1 - Fully visible" in script
     assert "Dense, opaque aceto-white lesion with sharp margins" in script
-    assert "12 to 3 o clock" in script
-    assert "Coarse punctation and mosaicism" in script
-    assert "Schiller positive" in script
+    assert "12 to 3" in script
     assert "Colposcopy-directed punch biopsy" in script
     assert "Urgent triage follow-up" in script
+    # Pitch-friendly length: avoid the old long multi-paragraph narration.
+    assert len(script) < 900
 
 
 def test_custom_script_override():

@@ -1,10 +1,10 @@
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.models.avatar_report import CervicalAvatarReport, ReportStatus
 from app.schemas.avatar_report import (
     ReportCreateRequest,
@@ -24,15 +24,46 @@ def _build_player_url(report_id: str) -> str:
     return f"/player/{report_id}"
 
 
+async def _start_video_render_background(report_id: str) -> None:
+    """Kick off Anam MP4 rendering after the written report is already saved.
+
+    Keeps create-report fast so the clinician can read the script / Present live
+    without waiting ~1 minute for the recording job to start.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(CervicalAvatarReport).where(CervicalAvatarReport.id == report_id)
+            )
+            report = result.scalar_one_or_none()
+            if report is None or report.anam_video_id:
+                return
+            video_job = await anam_service.create_avatar_video(script=report.generated_script)
+            report.anam_video_id = video_job.get("id")
+            report.video_status = video_job.get("status", "running")
+            content = video_job.get("content", {})
+            if content.get("available") and content.get("url"):
+                report.anam_video_url = content.get("url")
+                report.video_status = "completed"
+            await db.commit()
+            logger.info("Background video render started for report %s (%s)", report_id, report.anam_video_id)
+    except Exception as exc:
+        logger.warning("Background video render failed for report %s: %s", report_id, exc)
+
+
 @router.post(
     "",
     response_model=ReportResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create Cervical Avatar Report",
-    description="Ingest cervical scan findings from upstream Viscan backend, format clinician avatar script, start video render, and return player URL.",
+    description=(
+        "Ingest cervical scan findings, format the clinician avatar script immediately, "
+        "and return the written report. MP4 rendering continues in the background."
+    ),
 )
 async def create_cervical_report(
     payload: ReportCreateRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     # Check if scan_id already exists
@@ -45,39 +76,9 @@ async def create_cervical_report(
             detail=f"A report for scan_id '{payload.scan_id}' already exists (ID: {existing_report.id}).",
         )
 
-    # 1. Generate narration script from clinical findings
+    # 1. Generate narration script locally (fast) and save the written report.
+    #    Live Present uses POST /session later; MP4 render starts in the background.
     script = ClinicalFormatter.generate_narration_script(payload)
-
-    # 2. Build system prompt for Anam AI Persona
-    system_prompt = ClinicalFormatter.build_anam_system_prompt(payload, script)
-
-    # 3. Request initial Anam Session Token (for live WebRTC streaming)
-    session_token = None
-    try:
-        session_data = await anam_service.create_session_token(
-            system_prompt=system_prompt,
-            persona_id=payload.persona_id,
-        )
-        session_token = session_data.get("sessionToken")
-    except Exception as e:
-        logger.warning(f"Could not initialize immediate Anam session token: {e}")
-
-    # 4. Trigger Video Rendering (for direct playable MP4 URL)
-    video_id = None
-    video_status = "pending"
-    video_url = None
-    try:
-        video_job = await anam_service.create_avatar_video(script=script)
-        video_id = video_job.get("id")
-        video_status = video_job.get("status", "pending")
-        content = video_job.get("content", {})
-        if content.get("available") and content.get("url"):
-            video_url = content.get("url")
-            video_status = "completed"
-    except Exception as e:
-        logger.warning(f"Could not immediately initiate avatar video render: {e}")
-
-    # 5. Save to PostgreSQL database
     findings_dict = payload.findings.model_dump() if payload.findings else None
 
     report = CervicalAvatarReport(
@@ -91,10 +92,10 @@ async def create_cervical_report(
         clinical_notes=payload.clinical_notes,
         generated_script=script,
         anam_persona_id=payload.persona_id,
-        anam_session_token=session_token,
-        anam_video_id=video_id,
-        anam_video_url=video_url,
-        video_status=video_status,
+        anam_session_token=None,
+        anam_video_id=None,
+        anam_video_url=None,
+        video_status="pending",
         status=ReportStatus.READY.value,
     )
 
@@ -102,7 +103,8 @@ async def create_cervical_report(
     await db.commit()
     await db.refresh(report)
 
-    # Attach player URL for response
+    background_tasks.add_task(_start_video_render_background, report.id)
+
     resp = ReportResponse.model_validate(report)
     resp.player_url = _build_player_url(report.id)
     return resp
@@ -220,6 +222,7 @@ async def trigger_report_video(
             status=report.video_status,
             video_url=report.anam_video_url,
             player_url=_build_player_url(report.id),
+            generated_script=report.generated_script,
             duration_seconds=video_job.get("durationSeconds"),
             expires_at=content.get("expiresAt"),
         )
@@ -272,6 +275,7 @@ async def get_report_video_url(
                 status="uninitiated",
                 video_url=None,
                 player_url=_build_player_url(report.id),
+                generated_script=report.generated_script,
             )
 
     # Check status from Anam if not already completed
@@ -299,6 +303,7 @@ async def get_report_video_url(
         status=report.video_status or "pending",
         video_url=report.anam_video_url,
         player_url=_build_player_url(report.id),
+        generated_script=report.generated_script,
         duration_seconds=duration,
         expires_at=expires_at,
     )

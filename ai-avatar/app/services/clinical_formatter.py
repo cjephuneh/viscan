@@ -16,55 +16,31 @@ class ClinicalFormatter:
         if data.custom_script and data.custom_script.strip():
             return data.custom_script.strip()
 
-        # Build script segments
-        greeting = (
-            f"Hello. This is the automated ViScan clinical assessment report for Patient ID {data.patient_id}, "
-            f"corresponding to Cervical Scan reference {data.scan_id}."
-        )
+        # Keep the spoken script short so live Present and MP4 rendering stay pitch-friendly.
+        greeting = f"Hello. This is your ViScan report for patient {data.patient_id}."
 
-        # Result & Confidence
         confidence_str = (
-            f" with an AI model confidence score of {int(data.confidence_score * 100)} percent"
+            f", AI confidence {int(data.confidence_score * 100)} percent"
             if data.confidence_score is not None
             else ""
         )
-        assessment = (
-            f"Primary visual evaluation indicates: {data.screening_result}{confidence_str}."
-        )
+        assessment = f"The confirmed screening result is: {data.screening_result}{confidence_str}."
 
-        # Visual Findings summary
-        findings_bullets = []
+        findings_bits = []
         if data.findings:
             f: ClinicalFindings = data.findings
-            if f.transformation_zone:
-                findings_bullets.append(f"Transformation zone is classified as {f.transformation_zone}.")
             if f.aceto_white_changes:
-                loc = f" in the {f.lesion_quadrant} quadrant" if f.lesion_quadrant else ""
-                findings_bullets.append(f"Acetowhite changes: {f.aceto_white_changes}{loc}.")
-            if f.vascular_patterns:
-                findings_bullets.append(f"Vascular morphology demonstrates {f.vascular_patterns}.")
-            if f.lugol_iodine_reaction:
-                findings_bullets.append(f"Lugol's iodine testing resulted in: {f.lugol_iodine_reaction}.")
-            if f.additional_observations:
-                findings_bullets.append(f"Additional visual findings: {f.additional_observations}.")
+                loc = f" at {f.lesion_quadrant}" if f.lesion_quadrant else ""
+                findings_bits.append(f"Acetowhite findings: {f.aceto_white_changes}{loc}.")
+            elif f.additional_observations:
+                findings_bits.append(f"Key findings: {f.additional_observations}.")
 
-        findings_narrative = (
-            " " + " ".join(findings_bullets) if findings_bullets else ""
-        )
+        findings_narrative = (" " + " ".join(findings_bits)) if findings_bits else ""
+        rec = f" Next step: {data.recommendations}"
+        notes = f" Clinician note: {data.clinical_notes}." if data.clinical_notes else ""
+        conclusion = " Please review the images and confirm the care plan."
 
-        # Clinical Recommendation
-        rec = f"Clinical Recommendation: {data.recommendations}"
-
-        # Physician notes if present
-        notes = f" Reviewer notes note: {data.clinical_notes}" if data.clinical_notes else ""
-
-        conclusion = (
-            "This concludes the primary visual summary. "
-            "Please review the attached scan images and confirm the management plan."
-        )
-
-        full_script = f"{greeting} {assessment}{findings_narrative} {rec}{notes} {conclusion}"
-        return full_script
+        return f"{greeting} {assessment}{findings_narrative}{rec}{notes}{conclusion}"
 
     @staticmethod
     def build_anam_system_prompt(data: ReportCreateRequest, script: str) -> str:

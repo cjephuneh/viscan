@@ -68,6 +68,7 @@ export function VideoReport({
 }) {
   const [mp4, setMp4] = useState<Mp4State>({ kind: "preparing", status: "creating" });
   const [reportExists, setReportExists] = useState(false);
+  const [scriptText, setScriptText] = useState("");
   const [starting, setStarting] = useState(false);
   const [liveError, setLiveError] = useState("");
   const [presented, setPresented] = useState(false);
@@ -104,6 +105,7 @@ export function VideoReport({
           return schedule();
         }
         setReportExists(true);
+        if (report.generated_script) setScriptText(report.generated_script);
         if (report.status === "completed" && report.video_url) {
           setMp4({ kind: "ready", report });
           return;
@@ -143,6 +145,7 @@ export function VideoReport({
         return;
       }
       scriptRef.current = session.generated_script;
+      setScriptText(session.generated_script);
       setReportExists(true);
       // Presentation only: no microphone, so room noise cannot interrupt the avatar.
       await avatar.start(session.session_token, {}, { disableInputAudio: true });
@@ -190,9 +193,17 @@ export function VideoReport({
       <div className="record-head">
         <h3>Video report</h3>
         <p className="record-note">
-          The avatar explains the confirmed result and next steps. Present it live now, or use the recording later.
+          The written report is ready first. Present it live with the avatar now — the MP4 keeps rendering in the
+          background for later.
         </p>
       </div>
+
+      {scriptText && !live ? (
+        <section className="report-script" aria-label="Written report script">
+          <h4 className="block-title">Report script</h4>
+          <p className="summary">{scriptText}</p>
+        </section>
+      ) : null}
 
       {live ? (
         <>
@@ -255,10 +266,10 @@ export function VideoReport({
         <p className="video-status" role="status">
           <span className="spinner" aria-hidden="true" />
           {mp4.status === "creating"
-            ? "Preparing the video report…"
+            ? "Preparing the written report…"
             : mp4.status === "running"
-              ? "Recording for the record (usually one to two minutes)…"
-              : "Recording queued…"}
+              ? "MP4 recording in the background (you can Present live now)…"
+              : "MP4 recording queued in the background…"}
         </p>
       ) : mp4.kind === "failed" ? (
         <p className="video-status error" role="status">

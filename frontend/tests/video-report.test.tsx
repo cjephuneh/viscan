@@ -83,7 +83,8 @@ describe("VideoReport", () => {
     expect(button).toBeDisabled();
 
     await screen.findByRole("button", { name: "Present now with the patient" });
-    expect(screen.getByRole("status")).toHaveTextContent("Recording for the record");
+    expect(screen.getByRole("status")).toHaveTextContent(/background/i);
+    expect(screen.getByRole("region", { name: "Written report script" })).toHaveTextContent(/VIScan report/i);
     expect(screen.queryByTitle("Video report")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Present now with the patient" }));
@@ -126,8 +127,8 @@ describe("VideoReport", () => {
   it("polls while the recording is being created and rendered", async () => {
     const fetchMock = mockFetch({ video: [404, videoReportFixture("pending"), videoReportFixture("running"), videoReportFixture()] });
     render(<VideoReport interpretationId={7} pollMs={5} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Preparing the video report");
-    await screen.findByText(/Recording for the record/);
+    expect(screen.getByRole("status")).toHaveTextContent("Preparing the written report");
+    await screen.findByText(/background/i);
     await screen.findByTitle("Video report");
     const polls = fetchMock.mock.calls.filter(([u]) => String(u) === "/api/v1/reports/viscan-7/video");
     expect(polls.length).toBe(4);

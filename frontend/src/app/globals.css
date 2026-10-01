@@ -4061,6 +4061,21 @@ button:disabled {
   border: 0;
 }
 
+.report-script {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--paper) 88%, var(--accent-soft));
+}
+
+.report-script .summary {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
 .video-status {
   margin: 0;
   display: flex;
