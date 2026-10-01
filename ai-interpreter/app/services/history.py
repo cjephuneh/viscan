@@ -19,6 +19,89 @@ class HistoryError(ValueError):
     pass
 
 
+def prior_screens(patient: Patient | None) -> list[dict]:
+    """Earlier readings for this patient (newest first). Used for AI context, rules and UI."""
+    if patient is None or patient.id is None:
+        return []
+    rows = (
+        AIInterpretation.query.join(ViaImage)
+        .filter(ViaImage.patient_id == patient.id)
+        .order_by(AIInterpretation.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    prior = []
+    for interp in rows:
+        image = interp.image
+        clinician = max(interp.annotations, key=lambda a: a.created_at) if interp.annotations else None
+        prior.append({
+            "interpretation_id": interp.id,
+            "date": interp.created_at.date().isoformat() if interp.created_at else None,
+            "via_result": clinician.via_result if clinician else interp.via_result,
+            "source": "clinician" if clinician else "ai",
+            "screening_verdict": interp.screening_verdict,
+            "risk_score": interp.risk_score,
+            "review_status": interp.review_status,
+            "site": image.site,
+        })
+    return prior
+
+
+def lookup_by_external_id(external_id: str) -> dict:
+    """Return stored demographics + prior readings for a clinic patient ID.
+
+    Used when the clinician re-enters a returning patient's ID so the form can
+    prefill from the last visit and the AI can see longitudinal history.
+    """
+    external_id = (external_id or "").strip()
+    if not external_id:
+        raise HistoryError("'external_id' is required.")
+    patient = Patient.query.filter_by(external_id=external_id).first()
+    if patient is None:
+        return {
+            "found": False,
+            "external_id": external_id,
+            "previous_screens": [],
+            "screenings_count": 0,
+            "last_visit": None,
+            "prefill": None,
+        }
+
+    prior = prior_screens(patient)
+    last_visit = (
+        ScreeningVisit.query.filter_by(patient_id=patient.id)
+        .order_by(ScreeningVisit.created_at.desc(), ScreeningVisit.id.desc())
+        .first()
+    )
+    visit_data = last_visit.to_dict() if last_visit else None
+    site = prior[0].get("site") if prior else None
+    prefill = {
+        "patient_external_id": patient.external_id,
+        "age": (last_visit.age_at_visit if last_visit and last_visit.age_at_visit is not None else patient.age),
+        "hiv_status": (last_visit.hiv_status if last_visit and last_visit.hiv_status else patient.hiv_status) or "unknown",
+        "hpv_status": (last_visit.hpv_status if last_visit else None) or "unknown",
+        "pregnant": last_visit.pregnant if last_visit else None,
+        "previously_treated": last_visit.previously_treated if last_visit else None,
+        "smoker": last_visit.smoker if last_visit else None,
+        "parity": last_visit.parity if last_visit else None,
+        "symptoms": (last_visit.symptoms or []) if last_visit else [],
+        "site": site,
+        "previous_screening_result": prior[0]["via_result"] if prior else None,
+    }
+    return {
+        "found": True,
+        "id": patient.id,
+        "external_id": patient.external_id,
+        "age": patient.age,
+        "hiv_status": patient.hiv_status,
+        "created_at": patient.created_at.isoformat() if patient.created_at else None,
+        "previous_screens": prior,
+        "screenings_count": len(prior),
+        "last_visit": visit_data,
+        "prefill": prefill,
+    }
+
+
 def _date(value, field):
     if not value:
         return None

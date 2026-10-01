@@ -8,6 +8,7 @@ from flask import current_app
 from PIL import Image, UnidentifiedImageError
 
 from ..models import AIInterpretation, ClinicianAnnotation, Lesion, Patient, ScreeningVisit, ViaImage, db
+from .history import prior_screens
 from .interpreter import ReferenceExample, build_interpreter, with_defaults
 from .quality import assess_quality
 from .rules import build_assessment, build_recommendation
@@ -30,28 +31,6 @@ def _load_image(image_bytes: bytes) -> Image.Image:
     if img.format not in ALLOWED_FORMATS:
         raise PipelineError(f"Unsupported image format {img.format}; use JPEG, PNG or WEBP.")
     return img
-
-
-def _prior_screens(patient: Patient | None) -> list[dict]:
-    if patient is None or patient.id is None:
-        return []
-    rows = (
-        AIInterpretation.query.join(ViaImage)
-        .filter(ViaImage.patient_id == patient.id)
-        .order_by(AIInterpretation.created_at.desc())
-        .limit(10)
-        .all()
-    )
-    prior = []
-    for interp in rows:
-        clinician = max(interp.annotations, key=lambda a: a.created_at) if interp.annotations else None
-        prior.append({
-            "interpretation_id": interp.id,
-            "date": interp.created_at.date().isoformat() if interp.created_at else None,
-            "via_result": clinician.via_result if clinician else interp.via_result,
-            "source": "clinician" if clinician else "ai",
-        })
-    return prior
 
 
 def _create_visit(patient: Patient | None, fields: dict) -> ScreeningVisit:
@@ -167,7 +146,7 @@ def analyze_image(image_bytes: bytes, fields: dict, before_bytes: bytes | None =
 
     quality = assess_quality(img)
     patient = _get_or_create_patient(fields)
-    prior = _prior_screens(patient)
+    prior = prior_screens(patient)
     visit = _create_visit(patient, fields)
     via_image = _via_image(img, sha, filename, patient, visit, fields, quality, "acetic_acid")
     db.session.add(via_image)
@@ -177,8 +156,10 @@ def analyze_image(image_bytes: bytes, fields: dict, before_bytes: bytes | None =
                                   assess_quality(before_img), "native"))
 
     context = visit.context()
-    if not context.get("previous_screening_result") and prior:
-        context["previous_screening_result"] = prior[0]["via_result"]
+    if prior:
+        context["previous_screens"] = prior
+        if not context.get("previous_screening_result"):
+            context["previous_screening_result"] = prior[0]["via_result"]
 
     started = time.perf_counter()
     if not quality["acceptable"]:

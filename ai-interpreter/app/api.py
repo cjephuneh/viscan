@@ -11,7 +11,7 @@ from .models import (
 )
 from .services.avatar import AvatarUnavailable, create_session_token, fetch_persona
 from .services import coach
-from .services.history import HistoryError, list_screenings
+from .services.history import HistoryError, list_screenings, lookup_by_external_id
 from .services.care import compose_message, final_result, suggested_supplies
 from .services.intake import IntakeError, apply_event, create_intake, intake_payload
 from .services.metrics import compute_metrics
@@ -353,6 +353,12 @@ def add_outcome(patient_id):
     return jsonify(outcome.to_dict()), 201
 
 
+@api_bp.get("/patients/lookup")
+def lookup_patient():
+    """Look up a returning patient by clinic ID so the screening form can load history."""
+    return jsonify(lookup_by_external_id(request.args.get("external_id") or ""))
+
+
 @api_bp.get("/patients/<int:patient_id>")
 def get_patient(patient_id):
     """Full longitudinal record: images, AI reads, clinician annotations, diagnoses, outcomes."""
@@ -367,6 +373,7 @@ def get_patient(patient_id):
             "visits": [v.to_dict() for v in patient.visits],
             "diagnoses": [d.to_dict() for d in patient.diagnoses],
             "outcomes": [o.to_dict() for o in patient.outcomes],
+            "previous_screens": lookup_by_external_id(patient.external_id or "").get("previous_screens", []),
         }
     )
 

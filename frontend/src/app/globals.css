@@ -1168,6 +1168,53 @@ button:disabled {
   color: var(--alert);
 }
 
+.patient-history {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--paper));
+}
+
+.patient-history-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.patient-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.patient-history-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.patient-history-list strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.patient-history-list small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.patient-history-list a {
+  color: var(--accent);
+}
+
 .symptoms {
   display: flex;
   flex-wrap: wrap;

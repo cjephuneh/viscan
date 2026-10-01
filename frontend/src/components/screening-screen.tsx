@@ -10,11 +10,14 @@ import { ViscanMark } from "@/components/viscan-mark";
 import { type Intake, getIntake } from "@/lib/intake";
 import {
   type Interpretation,
+  type PatientLookup,
   type ViaResult,
   type VisitDetails,
   confirmReading,
   humanize,
   interpretImage,
+  lookupPatient,
+  trendLabel,
   verdictLabel,
   verdictTone,
   viaToVerdict,
@@ -125,6 +128,27 @@ function visitFromIntake(intake: Intake, current: VisitDetails): VisitDetails {
   };
 }
 
+function visitFromLookup(record: PatientLookup, current: VisitDetails): VisitDetails {
+  const p = record.prefill;
+  if (!p) return { ...current, patientId: record.external_id };
+  return {
+    ...current,
+    patientId: p.patient_external_id,
+    age: p.age != null ? String(p.age) : current.age,
+    hivStatus: p.hiv_status || current.hivStatus || "unknown",
+    hpvStatus: p.hpv_status || current.hpvStatus || "unknown",
+    pregnant: p.pregnant === null || p.pregnant === undefined ? current.pregnant : String(p.pregnant),
+    previouslyTreated:
+      p.previously_treated === null || p.previously_treated === undefined
+        ? current.previouslyTreated
+        : String(p.previously_treated),
+    smoker: p.smoker === null || p.smoker === undefined ? current.smoker : String(p.smoker),
+    parity: p.parity != null ? String(p.parity) : current.parity,
+    symptoms: (p.symptoms || []).filter((s) => SYMPTOMS.some((known) => known.id === s)),
+    site: current.site || p.site || "",
+  };
+}
+
 export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -160,10 +184,13 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
   const [confirming, setConfirming] = useState(false);
   const [intake, setIntake] = useState<Intake | null>(null);
   const [coachOpen, setCoachOpen] = useState(false);
+  const [patientRecord, setPatientRecord] = useState<PatientLookup | null>(null);
+  const [lookingUpPatient, setLookingUpPatient] = useState(false);
 
   function selectIntake(next: Intake | null) {
     setIntake(next);
     setPatientError("");
+    setPatientRecord(null);
     setVisit((current) =>
       next ? visitFromIntake(next, current) : { ...EMPTY_VISIT, site: current.site, clinicianId: current.clinicianId },
     );
@@ -183,6 +210,41 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
       active = false;
     };
   }, [intakeId]);
+
+  // Returning patient: when the clinician types a known Patient ID, load prior
+  // readings and prefill the visit form from the last screening.
+  useEffect(() => {
+    const id = visit.patientId.trim();
+    if (id.length < 2) {
+      setPatientRecord(null);
+      setLookingUpPatient(false);
+      return;
+    }
+    let active = true;
+    setLookingUpPatient(true);
+    const timer = window.setTimeout(() => {
+      lookupPatient(id)
+        .then((record) => {
+          if (!active) return;
+          setPatientRecord(record);
+          setLookingUpPatient(false);
+          if (record.found && !intake) {
+            setVisit((current) =>
+              current.patientId.trim() === record.external_id ? visitFromLookup(record, current) : current,
+            );
+          }
+        })
+        .catch(() => {
+          if (!active) return;
+          setPatientRecord(null);
+          setLookingUpPatient(false);
+        });
+    }, 400);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [visit.patientId, intake]);
 
   const update = <K extends keyof VisitDetails>(key: K, value: VisitDetails[K]) =>
     setVisit((current) => ({ ...current, [key]: value }));
@@ -474,8 +536,15 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             />
             {patientError ? (
               <small id="patient-error">{patientError}</small>
+            ) : lookingUpPatient ? (
+              <small id="patient-hint">Looking up prior visits…</small>
+            ) : patientRecord?.found ? (
+              <small id="patient-hint">
+                Returning patient · {patientRecord.screenings_count} prior screening
+                {patientRecord.screenings_count === 1 ? "" : "s"} loaded
+              </small>
             ) : (
-              <small id="patient-hint">Required before the reading</small>
+              <small id="patient-hint">Required before the reading · re-enter to load history</small>
             )}
           </div>
           <label className="field">
@@ -552,6 +621,38 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             </label>
           ))}
         </fieldset>
+
+        {patientRecord?.found && patientRecord.previous_screens.length ? (
+          <aside className="patient-history" aria-label="Prior screenings for this patient">
+            <div className="patient-history-head">
+              <h3 className="block-title">Prior screenings</h3>
+              <p>
+                Loaded for {patientRecord.external_id}. These results are sent with the next AI reading and used for
+                trend analysis.
+              </p>
+            </div>
+            <ol className="patient-history-list">
+              {patientRecord.previous_screens.map((screen) => (
+                <li key={screen.interpretation_id}>
+                  <span className={`case-dot ${verdictTone(screen.screening_verdict || viaToVerdict(screen.via_result))}`} aria-hidden="true" />
+                  <div>
+                    <strong>
+                      {screen.date ? new Date(`${screen.date}T00:00:00`).toLocaleDateString() : "Unknown date"} ·{" "}
+                      {humanize(screen.via_result)}
+                    </strong>
+                    <small>
+                      {screen.source === "clinician" ? "Clinician-confirmed" : "AI, unconfirmed"}
+                      {screen.risk_score != null ? ` · risk ${screen.risk_score}` : ""}
+                      {screen.site ? ` · ${screen.site}` : ""}
+                      {" · "}
+                      <Link href={`/screenings?q=%23${screen.interpretation_id}`}>Reading #{screen.interpretation_id}</Link>
+                    </small>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </aside>
+        ) : null}
 
         <div className="mobile-only step-actions">
           <button type="button" className="primary" onClick={goToImages}>
@@ -812,6 +913,30 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                     <small>AI clinical coach · explains the result, the next steps, quizzes you</small>
                   </span>
                 </button>
+              ) : null}
+
+              {result.history?.previous_screens?.length || result.history?.trend !== "first_screen_on_record" ? (
+                <section className="result-block" aria-labelledby="history-heading" data-coach="history">
+                  <h3 id="history-heading" className="block-title">
+                    Compared with prior screens
+                  </h3>
+                  <p className="summary">
+                    <strong>{trendLabel(result.history.trend)}</strong>
+                    {result.history.days_since_last_screen != null
+                      ? ` · ${result.history.days_since_last_screen} days since last screen`
+                      : ""}
+                  </p>
+                  {result.history.previous_screens?.length ? (
+                    <ul className="bullets">
+                      {result.history.previous_screens.slice(0, 5).map((screen) => (
+                        <li key={screen.interpretation_id}>
+                          {screen.date || "Unknown date"}: {humanize(screen.via_result)} (
+                          {screen.source === "clinician" ? "clinician-confirmed" : "AI"})
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
               ) : null}
 
               <section className="result-block" aria-labelledby="findings-heading" data-coach="findings">

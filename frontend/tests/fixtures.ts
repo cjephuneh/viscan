@@ -2,6 +2,8 @@ import { vi } from "vitest";
 import type { Intake } from "@/lib/intake";
 import type { CareSummary, Interpretation, PartnerHospital, Pharmacy, VideoReport } from "@/lib/viscan";
 
+type InterpretationOverrides = Partial<Interpretation>;
+
 export const interpretationFixture: Interpretation = {
   interpretation_id: 7,
   image_id: 3,
@@ -71,7 +73,7 @@ export const interpretationFixture: Interpretation = {
     flags: ["Contact bleeding noted"],
   },
   follow_up_due: "2027-09-30",
-  history: { trend: "first_screen_on_record" },
+  history: { trend: "first_screen_on_record", previous_screens: [], days_since_last_screen: null },
   review_status: "pending",
   engine: { name: "openai", model: "gpt-5", latency_ms: 42000 },
   before_image_id: null,
@@ -202,6 +204,10 @@ export function mockFetch(
     pharmaciesStatus?: number;
     interpretError?: string;
     waiting?: Intake[];
+    /** Returning-patient lookup payload for /patients/lookup. */
+    patientLookup?: Record<string, unknown>;
+    /** Override the interpret response body (merged onto the default fixture). */
+    interpretBody?: InterpretationOverrides;
     /** Video-report poll responses, consumed in order (last one repeats). 404 = report not created yet. */
     video?: (VideoReport | 404 | 502)[];
     /** Non-2xx status for the live-session request (e.g. 404 while the report is not created yet). */
@@ -213,18 +219,35 @@ export function mockFetch(
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
+    if (url.startsWith("/api/v1/patients/lookup")) {
+      if (overrides.patientLookup) return json(overrides.patientLookup);
+      const externalId = new URL(url, "http://local").searchParams.get("external_id") || "";
+      return json({
+        found: false,
+        external_id: externalId,
+        screenings_count: 0,
+        previous_screens: [],
+        last_visit: null,
+        prefill: null,
+      });
+    }
     if (url === "/api/v1/interpret") {
       if (overrides.interpretError) return json({ error: overrides.interpretError }, 502);
       const body = init?.body;
       const withBefore = body instanceof FormData && body.has("image_before");
+      const base = {
+        ...interpretationFixture,
+        ...(overrides.interpretBody ?? {}),
+        links: { ...interpretationFixture.links, ...(overrides.interpretBody?.links ?? {}) },
+      };
       return json(
         withBefore
           ? {
-              ...interpretationFixture,
+              ...base,
               before_image_id: 4,
-              links: { ...interpretationFixture.links, image_before: "/api/v1/images/4/file" },
+              links: { ...base.links, image_before: "/api/v1/images/4/file" },
             }
-          : interpretationFixture,
+          : base,
         201,
       );
     }

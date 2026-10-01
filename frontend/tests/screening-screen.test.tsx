@@ -283,4 +283,80 @@ describe("ScreeningScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close coach" }));
     expect(await screen.findByRole("button", { name: /Walk me through this with Kezia/ })).toBeInTheDocument();
   });
+
+  it("loads prior screenings and prefills the visit for a returning patient", async () => {
+    fetchMock = mockFetch({
+      patientLookup: {
+        found: true,
+        external_id: "PT-RETURN",
+        screenings_count: 1,
+        previous_screens: [
+          {
+            interpretation_id: 3,
+            date: "2026-08-01",
+            via_result: "VIA_POSITIVE",
+            source: "clinician",
+            screening_verdict: "SUSPICIOUS",
+            risk_score: 70,
+            site: "Kigali HC",
+          },
+        ],
+        last_visit: {
+          age_at_visit: 41,
+          hiv_status: "negative",
+          hpv_status: "unknown",
+          pregnant: false,
+          previously_treated: true,
+          smoker: false,
+          parity: 3,
+          symptoms: [],
+        },
+        prefill: {
+          patient_external_id: "PT-RETURN",
+          age: 41,
+          hiv_status: "negative",
+          hpv_status: "unknown",
+          pregnant: false,
+          previously_treated: true,
+          smoker: false,
+          parity: 3,
+          symptoms: [],
+          site: "Kigali HC",
+          previous_screening_result: "VIA_POSITIVE",
+        },
+      },
+      interpretBody: {
+        ...interpretationFixture,
+        history: {
+          trend: "persistent_positive",
+          days_since_last_screen: 60,
+          previous_screens: [
+            {
+              interpretation_id: 3,
+              date: "2026-08-01",
+              via_result: "VIA_POSITIVE",
+              source: "clinician",
+            },
+          ],
+        },
+      },
+    });
+
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-RETURN");
+
+    expect(await screen.findByText(/Returning patient · 1 prior screening/)).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Prior screenings for this patient" })).toBeInTheDocument();
+    expect(screen.getByText(/VIA positive/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Age")).toHaveValue(41));
+    expect(screen.getByLabelText("HIV status")).toHaveValue("negative");
+    expect(screen.getByLabelText("Treated before")).toHaveValue("true");
+    expect(screen.getByLabelText("Screening site")).toHaveValue("Kigali HC");
+
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+    expect(await screen.findByRole("heading", { name: "Compared with prior screens" })).toBeInTheDocument();
+    expect(screen.getByText(/Persistent positive/)).toBeInTheDocument();
+    expect(screen.getByText(/60 days since last screen/)).toBeInTheDocument();
+  });
 });

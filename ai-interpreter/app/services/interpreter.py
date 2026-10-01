@@ -212,6 +212,17 @@ def _context_text(context: dict) -> str:
     symptoms = [s for s in context.get("symptoms") or [] if s != "none"]
     if symptoms:
         parts.append("symptoms: " + ", ".join(s.replace("_", " ") for s in symptoms))
+    if context.get("previous_screening_result"):
+        parts.append(f"last recorded VIA result: {context['previous_screening_result']}")
+    prior = context.get("previous_screens") or []
+    if prior:
+        # Newest-first longitudinal history so the model can compare change over time.
+        summary = "; ".join(
+            f"{p.get('date') or 'unknown date'}: {p.get('via_result')} "
+            f"({'clinician-confirmed' if p.get('source') == 'clinician' else 'AI, unconfirmed'})"
+            for p in prior[:5]
+        )
+        parts.append(f"prior screens for this patient (newest first): {summary}")
     return ("Patient context: " + "; ".join(parts) + ".") if parts else "No patient context provided."
 
 

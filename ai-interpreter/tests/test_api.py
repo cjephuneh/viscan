@@ -527,6 +527,53 @@ def test_coach_token_briefs_the_case(client, monkeypatch):
     assert client.post(f"/api/v1/coach/sessions/{sid}/token").status_code == 503
 
 
+def test_patient_lookup_prefills_returning_patient(client):
+    first = upload(client, cervix_image(True), patient_external_id="PT-RETURN", age="41",
+                   hiv_status="negative", site="Kigali HC", previously_treated="true").json
+    client.post(f"/api/v1/interpretations/{first['interpretation_id']}/annotations",
+                json={"clinician_id": "nurse-07", "via_result": "VIA_POSITIVE"})
+
+    missing = client.get("/api/v1/patients/lookup?external_id=PT-UNKNOWN").json
+    assert missing["found"] is False and missing["previous_screens"] == []
+
+    found = client.get("/api/v1/patients/lookup?external_id=PT-RETURN").json
+    assert found["found"] is True and found["screenings_count"] == 1
+    assert found["prefill"]["age"] == 41 and found["prefill"]["hiv_status"] == "negative"
+    assert found["prefill"]["previously_treated"] is True
+    assert found["prefill"]["site"] == "Kigali HC"
+    assert found["prefill"]["previous_screening_result"] == "VIA_POSITIVE"
+    assert found["previous_screens"][0]["interpretation_id"] == first["interpretation_id"]
+    assert found["previous_screens"][0]["source"] == "clinician"
+
+    assert client.get("/api/v1/patients/lookup").status_code == 400
+
+
+def test_returning_patient_history_is_passed_to_ai(openai_client, monkeypatch):
+    install_fake_openai(monkeypatch, openai_result())
+    upload(openai_client, cervix_image(True), patient_external_id="PT-CTX", age="40")
+
+    captured = {}
+
+    class CapturingInterpreter:
+        engine = "openai"
+        model = "fake"
+
+        def interpret(self, image_bytes, context, examples, before_bytes=None):
+            captured["context"] = context
+            from app.services.interpreter import _context_text
+            captured["prompt"] = _context_text(context)
+            return openai_result(via_result="VIA_NEGATIVE", area=0, lesions=[],
+                                 swede={"acetowhiteness": 0, "margins_surface": 0, "vessels": 0, "lesion_size": 0})
+
+    monkeypatch.setattr("app.services.pipeline.build_interpreter", lambda _cfg: CapturingInterpreter())
+    res = upload(openai_client, cervix_image(False, size=640), patient_external_id="PT-CTX", age="40")
+    assert res.status_code == 201
+    assert captured["context"]["previous_screening_result"] == "VIA_POSITIVE"
+    assert len(captured["context"]["previous_screens"]) == 1
+    assert "prior screens for this patient" in captured["prompt"]
+    assert res.json["history"]["trend"] == "resolved_since_last_screen"
+
+
 def test_past_screenings_history(client):
     first = upload(client, cervix_image(True), patient_external_id="PT-HIST-1", site="Kigali HC").json
     second = upload(client, cervix_image(False), patient_external_id="PT-HIST-2").json

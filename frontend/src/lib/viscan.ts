@@ -65,7 +65,11 @@ export type Interpretation = {
     flags: string[];
   };
   follow_up_due: string | null;
-  history: { trend: string };
+  history: {
+    trend: string;
+    previous_screens?: PriorScreen[];
+    days_since_last_screen?: number | null;
+  };
   review_status: string;
   engine: { name: string; model: string; latency_ms: number };
   /** Pre-acetic-acid frame stored with the visit, if the clinician added one. */
@@ -171,6 +175,51 @@ export type VisitDetails = {
   clinicianId: string;
 };
 
+export type PriorScreen = {
+  interpretation_id: number;
+  date: string | null;
+  via_result: ViaResult;
+  source: "clinician" | "ai";
+  screening_verdict?: Verdict | null;
+  risk_score?: number | null;
+  review_status?: string | null;
+  site?: string | null;
+};
+
+export type PatientLookup = {
+  found: boolean;
+  external_id: string;
+  id?: number;
+  age?: number | null;
+  hiv_status?: string | null;
+  screenings_count: number;
+  previous_screens: PriorScreen[];
+  last_visit: {
+    age_at_visit?: number | null;
+    hiv_status?: string | null;
+    hpv_status?: string | null;
+    pregnant?: boolean | null;
+    previously_treated?: boolean | null;
+    smoker?: boolean | null;
+    parity?: number | null;
+    symptoms?: string[];
+    site?: string | null;
+  } | null;
+  prefill: {
+    patient_external_id: string;
+    age: number | null;
+    hiv_status: string;
+    hpv_status: string;
+    pregnant: boolean | null;
+    previously_treated: boolean | null;
+    smoker: boolean | null;
+    parity: number | null;
+    symptoms: string[];
+    site: string | null;
+    previous_screening_result: ViaResult | null;
+  } | null;
+};
+
 const API = "/api/v1";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -226,6 +275,41 @@ export const confirmReading = (id: number, body: { clinician_id: string; via_res
 
 export const getInterpretation = (id: number) => request<Interpretation>(`/interpretations/${id}`);
 export const getCare = (id: number) => request<CareSummary>(`/interpretations/${id}/care`);
+
+/** Load a returning patient's stored demographics and prior VIA readings by clinic ID. */
+export function lookupPatient(externalId: string): Promise<PatientLookup> {
+  const id = externalId.trim();
+  if (!id) {
+    return Promise.resolve({
+      found: false,
+      external_id: "",
+      screenings_count: 0,
+      previous_screens: [],
+      last_visit: null,
+      prefill: null,
+    });
+  }
+  return request<PatientLookup>(`/patients/lookup?external_id=${encodeURIComponent(id)}`);
+}
+
+export function trendLabel(trend: string | undefined): string {
+  switch (trend) {
+    case "first_screen_on_record":
+      return "First screen on record";
+    case "new_positive":
+      return "New positive since last screen";
+    case "persistent_positive":
+      return "Persistent positive";
+    case "resolved_since_last_screen":
+      return "Resolved since last screen";
+    case "stable_negative":
+      return "Stable negative";
+    case "not_comparable":
+      return "Not comparable with last screen";
+    default:
+      return humanize(trend);
+  }
+}
 
 export const getPartnerHospitals = (lat?: number, lng?: number) =>
   request<{ center: { lat: number; lng: number }; results: PartnerHospital[] }>(
