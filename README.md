@@ -47,21 +47,27 @@ npm ci
 npm run dev                 # http://localhost:3000
 npm test
 ```
-The frontend is deliberately reduced to the MVP: it opens directly on the clinician screen, and there is one patient screen.
-Both share a two-link bar (`src/app/(clinic)/layout.tsx`).
+Staff pages under `src/app/(clinic)/` share one navigation bar: Overview, New screening, Past screenings, Training, plus a
+Patient check-in button. The patient check-in page has no staff navigation.
 
-- `/` — Clinician screening: enter the patient details (or pick a patient who checked in with Mia), add the VIA image
-  (after acetic acid) and optionally the **before-acetic-acid** frame of the same cervix — it is stored with the visit and
-  given to the model as the baseline so only true acetowhite change counts (`image_before` on `POST /api/v1/interpret`) —
-  get the AI reading, confirm or correct it. After confirmation: digital record, printable report, avatar **video report**
-  (iframe), send results by SMS/WhatsApp, and "Start another screening" for the next image. "Walk me through this with Kezia"
-  docks the AI clinical coach next to the reading.
-- `/patient` — Patient check-in: Mia, an Anam AI avatar, guides the patient through intake and breathing exercises (a short
-  form is the fallback). Ends with a code the clinician uses on `/`.
+- `/` — Redirects to the Overview.
+- `/dashboard` — Overview: quick actions, screening totals, patients checked in and waiting, readings that need review,
+  overdue follow-ups and recent screenings.
+- `/screening` — Clinician workstation: enter the patient details (or pick a patient who checked in with Mia), add the VIA
+  image (after acetic acid) and optionally the **before-acetic-acid** frame of the same cervix — it is stored with the visit
+  and given to the model as the baseline so only true acetowhite change counts (`image_before` on `POST /api/v1/interpret`) —
+  get the AI reading, confirm or correct it. After confirmation: digital record, printable report, avatar **video report**,
+  send results by SMS/WhatsApp, and "Start another screening". "Walk me through this with Kezia" docks the AI clinical coach.
+- `/screenings` — Past screenings: every AI reading with the confirmed result, risk, follow-up date and whether the patient
+  was referred, messaged or used for coaching. Search/filter via URL (`?q=`, `verdict`, `status`, `sort`, `referred=1`,
+  `overdue=1`). Expand a row for the annotated image, recommendation, and links to the report, care page and a Kezia lesson
+  (`/learn?case=<id>`).
+- `/learn` — Training with Kezia, an Anam AI clinical coach: pick a past reading or a practice lesson; she highlights parts
+  of the result, quizzes you and role-plays counselling. Lessons are kept as a training record.
+- `/patient` — Patient check-in: Mia guides intake and breathing exercises (a short form is the fallback). Ends with a code
+  the clinician uses on `/screening`.
 - `/care/{id}` — Step after a suspicious confirmed result: referral to a partner hospital, nearby pharmacies (OpenStreetMap),
   the video report and result messaging.
-
-`/screening` redirects to `/`. The former overview, past-screenings and training pages were removed for the MVP.
 
 #### Core Backend ([`backend/`](./backend))
 ```bash

@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
-import { ScreeningScreen } from "@/components/screening-screen";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Screening · VISCAN" };
-
-// The app opens straight on the clinician screen: patient details + VIA image.
-export default async function ScreeningPage({ searchParams }: { searchParams: Promise<{ intake?: string }> }) {
-  const { intake } = await searchParams;
-  return <ScreeningScreen intakeId={intake} />;
+// Clinic home is the overview dashboard.
+export default function ClinicHomePage() {
+  redirect("/dashboard");
 }

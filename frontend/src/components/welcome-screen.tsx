@@ -167,7 +167,7 @@ function DonePanel({ intake, onRestart }: { intake: Intake; onRestart: () => voi
         <button type="button" className="primary" onClick={onRestart}>
           Next person
         </button>
-        <Link className="ghost link-button" href={`/?intake=${intake.id}`}>
+        <Link className="ghost link-button" href={`/screening?intake=${intake.id}`}>
           Staff: open screening
         </Link>
       </div>
@@ -331,8 +331,8 @@ export function WelcomeScreen() {
         <p className="welcome-brand">
           <span className="mark-dot" aria-hidden="true" /> VISCAN
         </p>
-        <Link href="/" className="staff-link">
-          Clinician screening →
+        <Link href="/dashboard" className="staff-link">
+          Staff area →
         </Link>
       </header>
 
