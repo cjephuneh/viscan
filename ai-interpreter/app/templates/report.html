@@ -6,20 +6,40 @@
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#1d2433; max-width:900px; margin:24px auto; padding:0 16px; font-size:14px; }
     h1 { font-size:20px; margin:0; } h2 { font-size:15px; border-bottom:1px solid #e4e7ec; padding-bottom:4px; margin-top:22px; }
-    .verdict { padding:14px 18px; border-radius:10px; color:#fff; margin:16px 0; }
-    .SUSPICIOUS { background:#dc2626; } .NOT_SUSPICIOUS { background:#16a34a; } .INDETERMINATE { background:#6b7280; }
+    .toolbar { display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px; }
+    .toolbar button { cursor:pointer; padding:8px 14px; font-size:14px; }
+    .verdict { padding:14px 18px; border-radius:10px; color:#fff; margin:16px 0; border:2px solid transparent; }
+    .SUSPICIOUS { background:#dc2626; border-color:#991b1b; } .NOT_SUSPICIOUS { background:#16a34a; border-color:#166534; } .INDETERMINATE { background:#6b7280; border-color:#374151; }
     .verdict b { font-size:22px; display:block; }
     table { border-collapse:collapse; width:100%; } td, th { border:1px solid #e4e7ec; padding:6px 8px; text-align:left; vertical-align:top; }
     th { background:#f8f9fb; width:32%; font-weight:600; }
     .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    img { width:100%; border-radius:8px; }
+    img { width:100%; max-width:100%; height:auto; border-radius:8px; display:block; }
     .muted { color:#667085; font-size:12px; }
     .ok { color:#16a34a; } .no { color:#dc2626; } .unk { color:#6b7280; }
-    @media print { .noprint { display:none; } body { margin:0; } }
+
+    @page { size: A4; margin: 12mm; }
+    @media print {
+      .noprint { display: none !important; }
+      html, body { margin: 0 !important; padding: 0 !important; max-width: none !important; width: 100% !important; background: #fff !important; color: #000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+      .grid { display: block !important; }
+      .grid > div { break-inside: avoid; page-break-inside: avoid; margin-bottom: 12px; }
+      img { max-height: 90mm; width: auto; max-width: 100%; object-fit: contain; break-inside: avoid; page-break-inside: avoid; }
+      table, tr, td, th, .verdict, ul, p { break-inside: avoid; page-break-inside: avoid; }
+      h2 { break-after: avoid; page-break-after: avoid; }
+      th { background: #f0f0f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .verdict { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+      .SUSPICIOUS { background:#dc2626 !important; color:#fff !important; }
+      .NOT_SUSPICIOUS { background:#16a34a !important; color:#fff !important; }
+      .INDETERMINATE { background:#6b7280 !important; color:#fff !important; }
+      a { color: inherit; text-decoration: none; }
+    }
   </style>
 </head>
 <body>
-  <button class="noprint" onclick="window.print()" style="float:right">Print / Save PDF</button>
+  <div class="toolbar noprint">
+    <button type="button" id="btn-print">Print / Save PDF</button>
+  </div>
   <h1>VIScan - AI-assisted VIA interpretation report</h1>
   <div class="muted">Report #{{ r.interpretation_id }} &middot; {{ r.created_at }} &middot; engine {{ r.engine.name }} ({{ r.engine.model }})</div>
 
@@ -36,10 +56,10 @@
   <div class="grid">
     <div>
       <h2>Annotated image{% if r.links.image_before %}s{% endif %}</h2>
-      <img src="{{ r.links.overlay }}" alt="Annotated VIA image (after acetic acid)">
+      <img src="{{ r.links.overlay }}" alt="Annotated VIA image (after acetic acid)" loading="eager">
       {% if r.links.image_before %}
       <p style="margin:6px 0 2px;font-size:12px;color:#555">Before acetic acid (baseline)</p>
-      <img src="{{ r.links.image_before }}" alt="Cervix before acetic acid">
+      <img src="{{ r.links.image_before }}" alt="Cervix before acetic acid" loading="eager">
       {% endif %}
     </div>
     <div>
@@ -125,5 +145,36 @@
   {% endfor %}
 
   <p class="muted">{{ r.disclaimer }}</p>
+
+  <script>
+    (function () {
+      function whenImagesReady() {
+        var imgs = Array.prototype.slice.call(document.images || []);
+        if (!imgs.length) return Promise.resolve();
+        return Promise.all(imgs.map(function (img) {
+          if (img.complete && img.naturalWidth) return Promise.resolve();
+          return new Promise(function (resolve) {
+            var done = function () { resolve(); };
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+            setTimeout(done, 8000);
+          });
+        }));
+      }
+
+      function doPrint() {
+        whenImagesReady().then(function () {
+          // Give the browser a tick so layout settles with loaded images.
+          setTimeout(function () { window.print(); }, 50);
+        });
+      }
+
+      var btn = document.getElementById("btn-print");
+      if (btn) btn.addEventListener("click", doPrint);
+
+      // Support Ctrl/Cmd+P after images load (still works natively; this just warms images).
+      whenImagesReady();
+    })();
+  </script>
 </body>
 </html>
