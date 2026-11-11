@@ -13,7 +13,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
+# Public checkout used when Kaggle executes this file alone as /kaggle/src/script.py.
+GITHUB_ARCHIVE = "https://github.com/cjephuneh/viscan/archive/refs/heads/main.tar.gz"
 
 # Free Kaggle GPUs fit this model. Set VISCAN_BASE_MODEL to a larger id when the GPU can hold it.
 DEFAULT_BASE_MODEL = "HuggingFaceTB/SmolVLM-256M-Instruct"
@@ -59,13 +60,65 @@ def dataset_dir(mount: Path | None = None) -> Path | None:
     return None
 
 
-def _ensure_model_libraries() -> None:
+def _is_project(path: Path) -> bool:
+    return (path / "scripts" / "finetune_via.py").is_file() and (path / "app").is_dir()
+
+
+def _download_repo(dest: Path) -> Path:
+    dest.mkdir(parents=True, exist_ok=True)
+    archive = dest / "viscan-main.tar.gz"
+    subprocess.check_call(["curl", "-fsSL", GITHUB_ARCHIVE, "-o", str(archive)])
+    subprocess.check_call(["tar", "-xzf", str(archive), "-C", str(dest)])
+    extracted = next(dest.glob("viscan-*/ai-interpreter"))
+    if not _is_project(extracted):
+        raise SystemExit(f"The public repository unpack at {extracted} has no scripts package.")
+    return extracted
+
+
+def project_root() -> Path:
+    """Find ai-interpreter.
+
+    Kaggle runs this file by itself at /kaggle/src/script.py and does not place
+    the scripts package next to it. A checkout, VISCAN_SOURCE, or the public
+    GitHub archive supplies the package. None of that loads the model.
+    """
+    here = Path(__file__).resolve().parent
+    for candidate in [here, *here.parents]:
+        if _is_project(candidate):
+            return candidate
+        if _is_project(candidate / "ai-interpreter"):
+            return candidate / "ai-interpreter"
+    source = os.environ.get("VISCAN_SOURCE", "")
+    if source:
+        checkout = Path(source)
+        if _is_project(checkout):
+            return checkout
+        if _is_project(checkout / "ai-interpreter"):
+            return checkout / "ai-interpreter"
+    for base in (Path("/kaggle/src"), Path("/kaggle/working"), Path("/kaggle/input")):
+        if not base.is_dir():
+            continue
+        for manifest in base.rglob("scripts/finetune_via.py"):
+            package = manifest.parents[1]
+            if _is_project(package):
+                return package
+    if Path("/kaggle/working").is_dir():
+        return _download_repo(Path("/kaggle/working/viscan-src"))
+    raise SystemExit(
+        "This file is running alone, with no scripts package beside it. "
+        "Set VISCAN_SOURCE to the repository, or run on Kaggle so the public archive can be unpacked."
+    )
+
+
+def _ensure_model_libraries(project: Path) -> None:
     try:
         import peft  # noqa: F401
         import torch  # noqa: F401
         import transformers  # noqa: F401
     except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", str(ROOT / "requirements-model.txt")])
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "-r", str(project / "requirements-model.txt"),
+        ])
 
 
 def main() -> None:
@@ -79,7 +132,9 @@ def main() -> None:
             "(manifest.csv plus colposcopic/CIN1, CIN2, and CIN3). This run will not learn."
         )
     os.environ["VISCAN_DATA_DIR"] = str(data)
-    _ensure_model_libraries()
+    project = project_root()
+    sys.path.insert(0, str(project))
+    _ensure_model_libraries(project)
     output = os.environ.get("VISCAN_OUTPUT", "/kaggle/working/viscan-via-adapter")
     sys.argv = [
         "finetune_via.py",

@@ -117,6 +117,17 @@ def test_kernel_entry_rejects_a_flat_folder_without_grades(tmp_path):
     assert train.unlabeled_reason(graded) is None
 
 
+def test_kaggle_script_finds_the_trainer_without_a_gpu(tmp_path, monkeypatch):
+    """Kaggle runs script.py alone. The package lookup must succeed before any model loads."""
+    script = tmp_path / "script.py"
+    script.write_text((REPO / "kaggle/viscan-train/train.py").read_text())
+    monkeypatch.setenv("VISCAN_SOURCE", str(REPO))
+    train = _load(script, "kaggle_script_alone")
+    project = train.project_root()
+    assert (project / "scripts" / "finetune_via.py").is_file()
+    assert (project / "app" / "services" / "interpreter.py").is_file()
+
+
 def test_kernel_entry_reports_when_no_dataset_is_mounted(tmp_path, monkeypatch):
     monkeypatch.delenv("VISCAN_DATA_DIR", raising=False)
     train = _load(REPO / "kaggle/viscan-train/train.py", "viscan_train_empty")

@@ -45,11 +45,11 @@ def prepare(dest: Path, kernel_slug: str = "", dataset_slug: str = "") -> None:
 
     metadata = {
         "id": kernel_slug or "owner/viscan-via-train",
-        "title": "VIScan VIA fine-tune",
+        "title": "viscan-via-train",
         "code_file": "train.py",
         "language": "python",
         "kernel_type": "script",
-        "is_private": True,
+        "is_private": False,
         "enable_gpu": True,
         "enable_internet": True,
         "dataset_sources": [dataset_slug] if dataset_slug else [],
