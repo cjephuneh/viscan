@@ -329,47 +329,54 @@ export function WelcomeScreen() {
     <div className="welcome">
       <div className="welcome-glow" aria-hidden="true" />
       <header className="welcome-top">
-        <p className="welcome-brand">
+        <div className="welcome-brand">
           <span className="brand-logo" aria-hidden="true">
             <ViscanMark size="lg" />
           </span>
-        </p>
+          <span className="welcome-brand-meta">
+            <small>Patient check-in</small>
+          </span>
+        </div>
         <Link href="/dashboard" className="staff-link">
-          Staff area →
+          Clinic workspace
         </Link>
       </header>
 
       {mode === "intro" ? (
         <main className="welcome-intro">
           <div className="intro-copy">
-            <p className="eyebrow">Before your screening</p>
-            <h1>
-              Meet <em>{personaName}</em>, your guide for today.
-            </h1>
-            <p className="lede">
-              {personaName} is a friendly AI guide. In about five minutes, she&apos;ll explain what VIA screening is,
-              what will happen in the room, and answer your questions, so you walk in calm and ready. A real nurse
-              does the check itself.
-            </p>
-            <ul className="intro-pills">
+            <div className="intro-hero">
+              <p className="eyebrow">Before your screening</p>
+              <h1>
+                Meet <em>{personaName}</em>, your guide for today.
+              </h1>
+              <p className="lede">
+                {personaName} is a friendly AI guide. In about five minutes, she&apos;ll explain what VIA screening is,
+                what will happen in the room, and answer your questions, so you walk in calm and ready. A real nurse
+                does the check itself.
+              </p>
+            </div>
+            <ul className="intro-pills" aria-label="What to expect">
               <li>About 5 minutes</li>
               <li>Talk or type</li>
               <li>Private: only your nurse sees your answers</li>
             </ul>
-            <div className="intro-actions">
-              <button type="button" className="primary big" onClick={meetMia} disabled={starting || persona?.available === false}>
-                {starting ? "Getting ready…" : `Meet ${personaName}`}
-              </button>
-              <button type="button" className="ghost" onClick={useForm} disabled={starting}>
-                I&apos;d rather fill in a short form
-              </button>
+            <div className="intro-cta">
+              <div className="intro-actions">
+                <button type="button" className="primary big" onClick={meetMia} disabled={starting || persona?.available === false}>
+                  {starting ? "Getting ready…" : `Meet ${personaName}`}
+                </button>
+                <button type="button" className="ghost" onClick={useForm} disabled={starting}>
+                  I&apos;d rather fill in a short form
+                </button>
+              </div>
+              <p className="quiet small">
+                {persona?.available === false
+                  ? `${personaName} is offline right now. The short form asks the same questions.`
+                  : "Your browser will ask to use the microphone so she can hear you."}
+              </p>
+              {notice ? <p className="error">{notice}</p> : null}
             </div>
-            <p className="quiet small">
-              {persona?.available === false
-                ? `${personaName} is offline right now. The short form asks the same questions.`
-                : "Your browser will ask to use the microphone so she can hear you."}
-            </p>
-            {notice ? <p className="error">{notice}</p> : null}
           </div>
           <div className="intro-portrait" aria-hidden="true">
             <div className="portrait-halo" />
@@ -471,34 +478,43 @@ export function WelcomeScreen() {
           </section>
 
           <aside className="guide-column">
-            <ol className="journey" aria-label="Your check-in">
-              {steps.map((step, i) => (
-                <li key={step.label} className={step.state}>
-                  <span className="journey-dot" aria-hidden="true">
-                    {step.done ? "✓" : i + 1}
-                  </span>
-                  {step.label}
-                </li>
-              ))}
-            </ol>
+            <section className="guide-block" aria-labelledby="checkin-progress-title">
+              <h2 id="checkin-progress-title" className="guide-block-title">
+                Your check-in
+              </h2>
+              <ol className="journey" aria-label="Your check-in">
+                {steps.map((step, i) => (
+                  <li key={step.label} className={step.state}>
+                    <span className="journey-dot" aria-hidden="true">
+                      {step.done ? "✓" : i + 1}
+                    </span>
+                    {step.label}
+                  </li>
+                ))}
+              </ol>
+            </section>
 
-            {finished && intake ? (
-              <section className="done-mini">
-                <p className="eyebrow">Your check-in code</p>
-                <CheckInCode code={intake.code} />
-                <p className="quiet small">Show this to the nurse. {personaName} will say goodbye in a moment.</p>
-              </section>
-            ) : topic ? (
-              <TopicCard topic={topic} />
-            ) : (
-              <article className="topic-card placeholder">
-                <p className="eyebrow">While you talk</p>
-                <h3>Pictures appear here</h3>
-                <p className="quiet">When {personaName} explains a step, you&apos;ll see it here too.</p>
-              </article>
-            )}
+            <section className="guide-block">
+              {finished && intake ? (
+                <div className="done-mini">
+                  <p className="eyebrow">Your check-in code</p>
+                  <CheckInCode code={intake.code} />
+                  <p className="quiet small">Show this to the nurse. {personaName} will say goodbye in a moment.</p>
+                </div>
+              ) : topic ? (
+                <TopicCard topic={topic} />
+              ) : (
+                <article className="topic-card placeholder">
+                  <p className="eyebrow">While you talk</p>
+                  <h3>Pictures appear here</h3>
+                  <p className="quiet">When {personaName} explains a step, you&apos;ll see it here too.</p>
+                </article>
+              )}
+            </section>
 
-            <VisitCard intake={intake} persona={personaName} />
+            <section className="guide-block">
+              <VisitCard intake={intake} persona={personaName} />
+            </section>
           </aside>
         </main>
       ) : null}
@@ -506,15 +522,19 @@ export function WelcomeScreen() {
       {mode === "form" && intake ? (
         <main className="welcome-form">
           {notice ? <p className="notice">{notice}</p> : null}
-          <IntakeForm
-            intake={intake}
-            onUpdate={keep}
-            onDone={(done) => {
-              keep(done);
-              setMode("done");
-            }}
-          />
-          <VisitCard intake={intake} persona={personaName} />
+          <div className="welcome-form-main">
+            <IntakeForm
+              intake={intake}
+              onUpdate={keep}
+              onDone={(done) => {
+                keep(done);
+                setMode("done");
+              }}
+            />
+          </div>
+          <aside className="welcome-form-side">
+            <VisitCard intake={intake} persona={personaName} />
+          </aside>
         </main>
       ) : null}
 
@@ -525,8 +545,10 @@ export function WelcomeScreen() {
       ) : null}
 
       <footer className="welcome-foot">
-        {personaName} is an AI assistant and does not give diagnoses. If you are in pain or bleeding heavily, tell the
-        front desk right away.
+        <p>
+          {personaName} is an AI assistant and does not give diagnoses. If you are in pain or bleeding heavily, tell the
+          front desk right away.
+        </p>
       </footer>
     </div>
   );

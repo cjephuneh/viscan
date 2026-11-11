@@ -50,3 +50,18 @@ export function ClinicNav() {
     </header>
   );
 }
+
+export function ClinicFooter() {
+  const year = new Date().getFullYear();
+
+  return (
+    <footer className="clinic-footer">
+      <div className="clinic-footer-inner">
+        <p>
+          © {year} VISCAN · Clinic workspace for VIA cervical screening. Confirm every AI reading before care
+          decisions.
+        </p>
+      </div>
+    </footer>
+  );
+}

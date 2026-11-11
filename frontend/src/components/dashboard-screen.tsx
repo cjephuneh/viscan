@@ -137,7 +137,8 @@ export function DashboardScreen() {
   return (
     <div className="page dashboard">
       <div className="atmosphere" aria-hidden="true" />
-      <header className="page-head">
+
+      <header className="page-head dash-hero">
         <p className="brand-support">Supports VIA cervical screening</p>
         <h1>Overview</h1>
         <p className="hero-lede">
@@ -145,52 +146,72 @@ export function DashboardScreen() {
         </p>
       </header>
 
-      <ul className="dash-actions">
-        {ACTIONS.map((a) => (
-          <li key={a.href}>
-            <Link href={a.href} className={a.tone === "primary" ? "dash-action primary-action" : "dash-action"}>
-              <strong>{a.title}</strong>
-              <span>{a.body}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <section className="dash-section" aria-label="Quick actions">
+        <div className="dash-section-head">
+          <h2 className="dash-section-title">Start here</h2>
+          <p className="dash-section-note">Common clinic tasks</p>
+        </div>
+        <ul className="dash-actions">
+          {ACTIONS.map((a) => (
+            <li key={a.href}>
+              <Link href={a.href} className={a.tone === "primary" ? "dash-action primary-action" : "dash-action"}>
+                <strong>{a.title}</strong>
+                <span>{a.body}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {summary ? (
-        <ul className="stats" aria-label="Screening totals">
-          <li className="stat">
-            <strong>{summary.total}</strong>
-            <span>Screenings</span>
-          </li>
-          <li className="stat alert">
-            <strong>{summary.suspicious}</strong>
-            <span>Suspicious</span>
-          </li>
-          <li className="stat">
-            <strong>{summary.pending_review}</strong>
-            <span>Awaiting review</span>
-          </li>
-          <li className="stat">
-            <strong>{summary.referred}</strong>
-            <span>Referred</span>
-          </li>
-          <li className={summary.follow_up_overdue ? "stat alert" : "stat"}>
-            <strong>{summary.follow_up_overdue}</strong>
-            <span>Follow-up overdue</span>
-          </li>
-          <li className="stat clear">
-            <strong>{summary.agreement_rate != null ? `${Math.round(summary.agreement_rate * 100)}%` : "—"}</strong>
-            <span>Clinician agreed with AI</span>
-          </li>
-        </ul>
+        <section className="dash-section" aria-label="Screening totals">
+          <div className="dash-section-head">
+            <h2 className="dash-section-title">At a glance</h2>
+            <p className="dash-section-note">Clinic screening totals</p>
+          </div>
+          <ul className="stats">
+            <li className="stat">
+              <strong>{summary.total}</strong>
+              <span>Screenings</span>
+            </li>
+            <li className="stat alert">
+              <strong>{summary.suspicious}</strong>
+              <span>Suspicious</span>
+            </li>
+            <li className="stat">
+              <strong>{summary.pending_review}</strong>
+              <span>Awaiting review</span>
+            </li>
+            <li className="stat">
+              <strong>{summary.referred}</strong>
+              <span>Referred</span>
+            </li>
+            <li className={summary.follow_up_overdue ? "stat alert" : "stat"}>
+              <strong>{summary.follow_up_overdue}</strong>
+              <span>Follow-up overdue</span>
+            </li>
+            <li className="stat clear">
+              <strong>{summary.agreement_rate != null ? `${Math.round(summary.agreement_rate * 100)}%` : "—"}</strong>
+              <span>Clinician agreed with AI</span>
+            </li>
+          </ul>
+        </section>
       ) : null}
 
-      <div className="dash-grid">
-        <CheckedInPatients onSelect={(intake) => router.push(`/screening?intake=${intake.id}`)} />
-        {PANELS.map((panel) => (
-          <ScreeningPanel key={panel.id} panel={panel} />
-        ))}
-      </div>
+      <section className="dash-section dash-work" aria-label="Clinic work">
+        <div className="dash-section-head">
+          <h2 className="dash-section-title">Today’s work</h2>
+          <p className="dash-section-note">Waiting patients and readings that need attention</p>
+        </div>
+        <div className="dash-work-stack">
+          <CheckedInPatients onSelect={(intake) => router.push(`/screening?intake=${intake.id}`)} />
+          <div className="dash-grid">
+            {PANELS.map((panel) => (
+              <ScreeningPanel key={panel.id} panel={panel} />
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

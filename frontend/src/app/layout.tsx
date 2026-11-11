@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Source_Sans_3, Source_Serif_4 } from "next/font/google";
+import { ScrollPolish } from "@/components/scroll-polish";
 import "./globals.css";
 
 const sourceSans = Source_Sans_3({
@@ -27,7 +28,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${sourceSans.variable} ${sourceSerif.variable}`}>
-      <body>{children}</body>
+      <body className={sourceSans.className}>
+        <ScrollPolish />
+        {children}
+      </body>
     </html>
   );
 }
