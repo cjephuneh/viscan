@@ -1,6 +1,5 @@
 import io
 import json
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -11,7 +10,7 @@ from app.services import interpreter as interp_mod
 from app.services.rules import build_recommendation
 
 
-def openai_result(via_result="VIA_POSITIVE", confidence=0.8, tz="type_1", area=30, red_flags=None,
+def model_result(via_result="VIA_POSITIVE", confidence=0.8, tz="type_1", area=30, red_flags=None,
                   swede=None, histology=None, lesions=None):
     flags = {"mass_or_exophytic_growth": False, "ulceration": False, "contact_bleeding": False,
              "atypical_vessels": False, "necrosis": False, "irregular_contour": False}
@@ -44,20 +43,20 @@ def openai_result(via_result="VIA_POSITIVE", confidence=0.8, tz="type_1", area=3
     }
 
 
-def install_fake_openai(monkeypatch, result, captured=None):
-    class FakeCompletions:
-        def create(self, **kwargs):
-            if captured is not None:
-                captured.update(kwargs)
-            msg = SimpleNamespace(content=json.dumps(result), refusal=None)
-            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+def _touch_model(path) -> str:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "config.json").write_text("{}")
+    (path / "model.safetensors").write_bytes(b"x")
+    return str(path)
 
-    class FakeOpenAI:
-        def __init__(self, api_key):
-            self.chat = SimpleNamespace(completions=FakeCompletions())
 
-    import openai
-    monkeypatch.setattr(openai, "OpenAI", FakeOpenAI)
+def install_fake_local(monkeypatch, result, captured=None):
+    def generate(self, messages):
+        if captured is not None:
+            captured["messages"] = messages
+        return json.dumps(result)
+
+    monkeypatch.setattr("app.services.interpreter.LocalVisionInterpreter.generate", generate)
 
 
 def cervix_image(acetowhite: bool, size=600) -> bytes:
@@ -186,32 +185,37 @@ def test_rules_ablation_eligibility():
     assert rec["urgency"] == "urgent" and rec["ablation_eligible"] is False
 
 
-def test_openai_interpreter_uses_structured_output_and_references(client, monkeypatch):
+def test_local_interpreter_sends_the_schema_prompt_and_references(client, monkeypatch, tmp_path):
     captured = {}
-    fake_result = openai_result(
+    fake_result = model_result(
         via_result="SUSPICIOUS_FOR_CANCER", confidence=0.82, tz="type_3",
         red_flags={"mass_or_exophytic_growth": True, "ulceration": True},
         swede={"acetowhiteness": 2, "margins_surface": 2, "vessels": 2, "lesion_size": 2},
         histology={"normal_or_benign": 0.05, "cin1": 0.05, "cin2_plus": 0.3, "invasive_cancer": 0.6},
     )
 
-    install_fake_openai(monkeypatch, fake_result, captured)
+    install_fake_local(monkeypatch, fake_result, captured)
 
     first = upload(client, cervix_image(True), patient_external_id="P9")
     client.post(f"/api/v1/interpretations/{first.json['interpretation_id']}/annotations",
                 json={"clinician_id": "dr-a", "via_result": "VIA_POSITIVE"})
 
-    client.application.config.update(INTERPRETER_MODE="openai", OPENAI_API_KEY="sk-test")
+    client.application.config.update(
+        INTERPRETER_MODE="local",
+        LOCAL_MODEL_DIR=_touch_model(tmp_path / "base"),
+        LOCAL_ADAPTER_DIR=str(tmp_path / "no-adapter"),
+    )
     res = upload(client, cervix_image(True, size=640), patient_external_id="P10", age="52")
     body = res.json
     assert res.status_code == 201, body
     assert body["diagnosis"]["via_result"] == "SUSPICIOUS_FOR_CANCER"
+    assert body["engine"]["name"] == "local"
     assert body["recommendation"]["urgency"] == "urgent"
     assert body["engine"]["reference_examples"] == [first.json["image_id"]]
-    assert captured["response_format"]["json_schema"]["strict"] is True
-    images_sent = [c for c in captured["messages"][1]["content"] if c["type"] == "image_url"]
+    assert interp_mod.LOCAL_JSON_INSTRUCTION in captured["messages"][0]["content"][0]["text"]
+    images_sent = [c for c in captured["messages"][1]["content"] if c["type"] == "image"]
     assert len(images_sent) == 2
-    assert interp_mod.SYSTEM_PROMPT in captured["messages"][0]["content"]
+    assert interp_mod.SYSTEM_PROMPT in captured["messages"][0]["content"][0]["text"]
     assert body["verdict"]["screening_verdict"] == "SUSPICIOUS"
     assert body["verdict"]["suspicion_level"] == "very_high"
     assert body["swede"]["total"] == 8
@@ -219,14 +223,18 @@ def test_openai_interpreter_uses_structured_output_and_references(client, monkey
 
 
 @pytest.fixture
-def openai_client(client, monkeypatch):
-    client.application.config.update(INTERPRETER_MODE="openai", OPENAI_API_KEY="sk-test")
+def local_client(client, tmp_path):
+    client.application.config.update(
+        INTERPRETER_MODE="local",
+        LOCAL_MODEL_DIR=_touch_model(tmp_path / "base"),
+        LOCAL_ADAPTER_DIR=str(tmp_path / "no-adapter"),
+    )
     return client
 
 
-def test_rich_response_is_returned_and_stored(openai_client, monkeypatch):
-    install_fake_openai(monkeypatch, openai_result())
-    res = upload(openai_client, cervix_image(True), patient_external_id="R1", age="36", hiv_status="positive",
+def test_rich_response_is_returned_and_stored(local_client, monkeypatch):
+    install_fake_local(monkeypatch, model_result())
+    res = upload(local_client, cervix_image(True), patient_external_id="R1", age="36", hiv_status="positive",
                  hpv_status="positive", symptoms="postcoital_bleeding", pregnant="false", parity="2",
                  smoker="yes", previously_treated="no")
     assert res.status_code == 201, res.json
@@ -248,24 +256,24 @@ def test_rich_response_is_returned_and_stored(openai_client, monkeypatch):
     assert body["clinical_summary"]["patient_explanation"]
     assert any("canal" in c for c in body["clinical_summary"]["clinician_checklist"])
 
-    stored = openai_client.get(f"/api/v1/interpretations/{body['interpretation_id']}").json
+    stored = local_client.get(f"/api/v1/interpretations/{body['interpretation_id']}").json
     assert stored["verdict"] == body["verdict"]
     assert stored["lesions"][0]["id"]
 
-    overlay = openai_client.get(body["links"]["overlay"])
+    overlay = local_client.get(body["links"]["overlay"])
     assert overlay.status_code == 200 and overlay.mimetype == "image/png"
-    report = openai_client.get(body["links"]["report"])
+    report = local_client.get(body["links"]["report"])
     assert report.status_code == 200 and b"SUSPICIOUS" in report.data and b"Swede" in report.data
 
 
-def test_symptomatic_negative_is_referred_and_history_tracked(openai_client, monkeypatch):
-    install_fake_openai(monkeypatch, openai_result())
-    upload(openai_client, cervix_image(True), patient_external_id="H1", age="40")
+def test_symptomatic_negative_is_referred_and_history_tracked(local_client, monkeypatch):
+    install_fake_local(monkeypatch, model_result())
+    upload(local_client, cervix_image(True), patient_external_id="H1", age="40")
 
-    negative = openai_result(via_result="VIA_NEGATIVE", area=0, lesions=[],
+    negative = model_result(via_result="VIA_NEGATIVE", area=0, lesions=[],
                              swede={"acetowhiteness": 0, "margins_surface": 0, "vessels": 0, "lesion_size": 0})
-    install_fake_openai(monkeypatch, negative)
-    res = upload(openai_client, cervix_image(False, size=640), patient_external_id="H1",
+    install_fake_local(monkeypatch, negative)
+    res = upload(local_client, cervix_image(False, size=640), patient_external_id="H1",
                  symptoms="postcoital_bleeding,abnormal_discharge")
     body = res.json
     assert body["verdict"]["screening_verdict"] == "NOT_SUSPICIOUS"
@@ -275,60 +283,60 @@ def test_symptomatic_negative_is_referred_and_history_tracked(openai_client, mon
     assert len(body["history"]["previous_screens"]) == 1
 
 
-def test_worklist_orders_by_suspicion_and_review_clears_it(openai_client, monkeypatch):
-    install_fake_openai(monkeypatch, openai_result(via_result="VIA_NEGATIVE", lesions=[]))
-    neg = upload(openai_client, cervix_image(False), patient_external_id="W1").json
-    install_fake_openai(monkeypatch, openai_result(via_result="SUSPICIOUS_FOR_CANCER", red_flags={"ulceration": True}))
-    sus = upload(openai_client, cervix_image(True), patient_external_id="W2").json
+def test_worklist_orders_by_suspicion_and_review_clears_it(local_client, monkeypatch):
+    install_fake_local(monkeypatch, model_result(via_result="VIA_NEGATIVE", lesions=[]))
+    neg = upload(local_client, cervix_image(False), patient_external_id="W1").json
+    install_fake_local(monkeypatch, model_result(via_result="SUSPICIOUS_FOR_CANCER", red_flags={"ulceration": True}))
+    sus = upload(local_client, cervix_image(True), patient_external_id="W2").json
 
-    rows = openai_client.get("/api/v1/worklist").json
+    rows = local_client.get("/api/v1/worklist").json
     assert [r["interpretation_id"] for r in rows] == [sus["interpretation_id"], neg["interpretation_id"]]
-    assert openai_client.get("/api/v1/worklist?verdict=NOT_SUSPICIOUS").json[0]["interpretation_id"] == neg["interpretation_id"]
+    assert local_client.get("/api/v1/worklist?verdict=NOT_SUSPICIOUS").json[0]["interpretation_id"] == neg["interpretation_id"]
 
-    res = openai_client.post(sus["links"]["annotate"], json={"clinician_id": "dr-b", "via_result": "VIA_POSITIVE"})
+    res = local_client.post(sus["links"]["annotate"], json={"clinician_id": "dr-b", "via_result": "VIA_POSITIVE"})
     assert res.json["review_status"] == "disputed"
-    pending = [r["interpretation_id"] for r in openai_client.get("/api/v1/worklist").json]
+    pending = [r["interpretation_id"] for r in local_client.get("/api/v1/worklist").json]
     assert pending == [neg["interpretation_id"]]
 
-    metrics = openai_client.get("/api/v1/metrics").json
+    metrics = local_client.get("/api/v1/metrics").json
     assert metrics["by_verdict"] == {"NOT_SUSPICIOUS": 1, "SUSPICIOUS": 1}
     assert metrics["by_review_status"] == {"pending": 1, "disputed": 1}
 
 
-def test_care_flow_partners_referral_notifications(openai_client, monkeypatch):
-    install_fake_openai(monkeypatch, openai_result(tz="type_3", swede={"acetowhiteness": 2, "margins_surface": 2,
+def test_care_flow_partners_referral_notifications(local_client, monkeypatch):
+    install_fake_local(monkeypatch, model_result(tz="type_3", swede={"acetowhiteness": 2, "margins_surface": 2,
                                                                        "vessels": 1, "lesion_size": 2}))
-    res = upload(openai_client, cervix_image(True), patient_external_id="C1").json
+    res = upload(local_client, cervix_image(True), patient_external_id="C1").json
     interp_id = res["interpretation_id"]
 
-    partners = openai_client.get("/api/v1/partner-hospitals?lat=-1.9441&lng=30.0619").json["results"]
+    partners = local_client.get("/api/v1/partner-hospitals?lat=-1.9441&lng=30.0619").json["results"]
     assert len(partners) == 4 and all(p["is_demo"] for p in partners)
     assert [p["distance_km"] for p in partners] == sorted(p["distance_km"] for p in partners)
 
-    care = openai_client.get(f"/api/v1/interpretations/{interp_id}/care").json
+    care = local_client.get(f"/api/v1/interpretations/{interp_id}/care").json
     assert care["is_suspicious"] is True and care["needs_referral"] is True
     assert any("Pain relief" in s["item"] for s in care["suggested_supplies"])
 
-    ref = openai_client.post(f"/api/v1/interpretations/{interp_id}/referrals",
+    ref = local_client.post(f"/api/v1/interpretations/{interp_id}/referrals",
                              json={"hospital_id": partners[0]["id"], "referred_by": "nurse-01"})
     assert ref.status_code == 201 and ref.json["hospital"]["name"] == partners[0]["name"]
 
-    note = openai_client.post(f"/api/v1/interpretations/{interp_id}/notifications",
+    note = local_client.post(f"/api/v1/interpretations/{interp_id}/notifications",
                               json={"channel": "whatsapp", "phone": "+250 788 123 456"})
     assert note.status_code == 201
     assert note.json["status"] == "simulated" and note.json["recipient"] == "+250788123456"
     assert partners[0]["name"] in note.json["message"] and "C1" in note.json["message"]
 
-    care = openai_client.get(f"/api/v1/interpretations/{interp_id}/care").json
+    care = local_client.get(f"/api/v1/interpretations/{interp_id}/care").json
     assert len(care["referrals"]) == 1 and len(care["notifications"]) == 1
 
-    bad = openai_client.post(f"/api/v1/interpretations/{interp_id}/notifications", json={"channel": "fax", "phone": "123"})
+    bad = local_client.post(f"/api/v1/interpretations/{interp_id}/notifications", json={"channel": "fax", "phone": "123"})
     assert bad.status_code == 400
 
-    created = openai_client.post("/api/v1/partner-hospitals",
+    created = local_client.post("/api/v1/partner-hospitals",
                                  json={"name": "Real Partner", "latitude": -1.95, "longitude": 30.06, "services": ["LEEP"]})
     assert created.status_code == 201 and created.json["is_demo"] is False
-    only_leep = openai_client.get("/api/v1/partner-hospitals?service=LEEP").json["results"]
+    only_leep = local_client.get("/api/v1/partner-hospitals?service=LEEP").json["results"]
     assert "Real Partner" in [p["name"] for p in only_leep]
 
 
@@ -579,25 +587,26 @@ def test_patient_lookup_prefills_returning_patient(client):
     assert client.get("/api/v1/patients/lookup").status_code == 400
 
 
-def test_returning_patient_history_is_passed_to_ai(openai_client, monkeypatch):
-    install_fake_openai(monkeypatch, openai_result())
-    upload(openai_client, cervix_image(True), patient_external_id="PT-CTX", age="40")
+def test_returning_patient_history_is_passed_to_ai(local_client, monkeypatch):
+    install_fake_local(monkeypatch, model_result())
+    upload(local_client, cervix_image(True), patient_external_id="PT-CTX", age="40")
 
     captured = {}
 
     class CapturingInterpreter:
-        engine = "openai"
+        engine = "local"
+        uses_references = True
         model = "fake"
 
         def interpret(self, image_bytes, context, examples, before_bytes=None):
             captured["context"] = context
             from app.services.interpreter import _context_text
             captured["prompt"] = _context_text(context)
-            return openai_result(via_result="VIA_NEGATIVE", area=0, lesions=[],
+            return model_result(via_result="VIA_NEGATIVE", area=0, lesions=[],
                                  swede={"acetowhiteness": 0, "margins_surface": 0, "vessels": 0, "lesion_size": 0})
 
     monkeypatch.setattr("app.services.pipeline.build_interpreter", lambda _cfg: CapturingInterpreter())
-    res = upload(openai_client, cervix_image(False, size=640), patient_external_id="PT-CTX", age="40")
+    res = upload(local_client, cervix_image(False, size=640), patient_external_id="PT-CTX", age="40")
     assert res.status_code == 201
     assert captured["context"]["previous_screening_result"] == "VIA_POSITIVE"
     assert len(captured["context"]["previous_screens"]) == 1
@@ -749,33 +758,132 @@ def test_unreadable_before_image_is_rejected(client):
     assert "Before-acetic-acid image" in res.json["error"]
 
 
-def test_openai_engine_receives_both_frames(monkeypatch):
-    from app.services.interpreter import OpenAIInterpreter
+def test_colab_mode_name_uses_the_same_remote_port():
+    from app.services.interpreter import resolve_engine
 
+    assert resolve_engine({"INTERPRETER_MODE": "colab"}) == ("remote", "remote")
+    assert resolve_engine({"INTERPRETER_MODE": "remote"}) == ("remote", "remote")
+
+
+def test_auto_mode_selects_local_weights_and_adapter(tmp_path):
+    from app.services.interpreter import resolve_engine
+
+    model_dir = tmp_path / "base"
+    _touch_model(model_dir)
+    (model_dir / "viscan-source.txt").write_text("HuggingFaceTB/SmolVLM-256M-Instruct\n")
+    missing = {"INTERPRETER_MODE": "auto", "LOCAL_MODEL_DIR": str(model_dir), "LOCAL_ADAPTER_DIR": ""}
+    assert resolve_engine(missing) == ("local", "HuggingFaceTB/SmolVLM-256M-Instruct")
+
+    adapter = tmp_path / "viscan-via-adapter"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text("{}")
+    selected = resolve_engine({**missing, "LOCAL_ADAPTER_DIR": str(adapter)})
+    assert selected == ("local", "HuggingFaceTB/SmolVLM-256M-Instruct+viscan-via-adapter")
+    assert resolve_engine({"INTERPRETER_MODE": "auto", "LOCAL_MODEL_DIR": str(tmp_path / "empty")})[0] == "heuristic"
+
+
+def test_remote_mode_stores_the_reading_from_any_runtime(client, monkeypatch):
     captured = {}
 
-    class FakeCompletions:
-        def create(self, **kwargs):
-            captured.update(kwargs)
-            msg = type("M", (), {"refusal": None, "content": json.dumps({
-                "image_modality": "acetic_acid", "via_result": "VIA_POSITIVE", "confidence": 0.8,
-                "image_adequacy": {"adequate": True, "issues": []}, "scj_visibility": "fully_visible",
-                "transformation_zone_type": "type_1", "findings": {}, "lesions": [], "rationale": "x",
-                "swede": {"acetowhiteness": 2, "margins": 1, "vessels": 0, "size": 1, "iodine": 0},
-            })})()
-            return type("R", (), {"choices": [type("C", (), {"message": msg})()]})()
+    class FakeResp:
+        def __enter__(self):
+            return self
 
-    engine = OpenAIInterpreter.__new__(OpenAIInterpreter)
-    engine.client = type("Client", (), {"chat": type("Chat", (), {"completions": FakeCompletions()})()})()
-    engine.model, engine.reasoning_effort = "gpt-5", ""
+        def __exit__(self, *args):
+            return False
 
+        def read(self):
+            return json.dumps(model_result()).encode()
+
+    def fake_open(request, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = request.data
+        captured["auth"] = request.get_header("Authorization")
+        captured["timeout"] = timeout
+        return FakeResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_open)
+    client.application.config.update(
+        INTERPRETER_MODE="remote",
+        REMOTE_MODEL_URL="https://example.trycloudflare.com/",
+        REMOTE_MODEL_TOKEN="secret",
+        REMOTE_MODEL_TIMEOUT_SECONDS=15,
+    )
+    res = upload(client, cervix_image(True), patient_external_id="GPU1", age="36")
+    assert res.status_code == 201, res.json
+    assert res.json["engine"]["name"] == "remote"
+    assert res.json["engine"]["model"] == "remote"
+    assert res.json["diagnosis"]["via_result"] == "VIA_POSITIVE"
+    assert captured["url"] == "https://example.trycloudflare.com/interpret"
+    assert captured["auth"] == "Bearer secret"
+    assert captured["timeout"] == 15
+    assert b'name="image"' in captured["body"]
+    assert b"age" in captured["body"]
+
+
+def test_model_server_checks_the_token_and_returns_json():
+    from scripts.model_server import create_server
+
+    class FakeModel:
+        engine = "local"
+        model = "fake"
+
+        def interpret(self, image_bytes, context, examples, before_bytes=None):
+            assert context["age"] == 36
+            assert examples[0].via_result == "VIA_NEGATIVE"
+            assert before_bytes
+            return model_result(via_result="VIA_NEGATIVE", area=0, lesions=[])
+
+    server = create_server("", "", 8, "secret", interpreter=FakeModel())
+    remote = server.test_client()
+    assert remote.get("/health").status_code == 401
+    assert remote.get("/health", headers={"Authorization": "Bearer secret"}).status_code == 200
+    res = remote.post(
+        "/interpret",
+        data={
+            "image": (io.BytesIO(cervix_image(False)), "via.jpg"),
+            "image_before": (io.BytesIO(cervix_image(False, size=640)), "before.jpg"),
+            "example_0": (io.BytesIO(cervix_image(True)), "example.jpg"),
+            "context": json.dumps({"age": 36}),
+            "examples": json.dumps([{"via_result": "VIA_NEGATIVE", "notes": ""}]),
+        },
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer secret"},
+    )
+    assert res.status_code == 200, res.json
+    assert res.json["via_result"] == "VIA_NEGATIVE"
+
+
+def test_local_engine_receives_both_frames():
+    from app.services.interpreter import LocalVisionInterpreter
+
+    captured = {}
+    payload = {
+        "image_modality": "acetic_acid", "via_result": "VIA_POSITIVE", "confidence": 0.8,
+        "image_adequacy": {"adequate": True, "issues": []}, "scj_visibility": "fully_visible",
+        "transformation_zone_type": "type_1", "findings": {}, "lesions": [], "rationale": "x",
+        "swede": {"acetowhiteness": 2, "margins_surface": 1, "vessels": 0, "lesion_size": 1},
+    }
+
+    engine = LocalVisionInterpreter.__new__(LocalVisionInterpreter)
+
+    def generate(messages):
+        captured["messages"] = messages
+        return json.dumps(payload)
+
+    engine.generate = generate
     engine.interpret(cervix_image(True), {}, [], before_bytes=cervix_image(False))
     content = captured["messages"][1]["content"]
-    images = [c for c in content if c["type"] == "image_url"]
+    images = [c for c in content if c["type"] == "image"]
     texts = " ".join(c["text"] for c in content if c["type"] == "text")
     assert len(images) == 2
     assert "pre-acetic-acid" in texts and "post-acetic-acid image only" in texts
 
     captured.clear()
     engine.interpret(cervix_image(True), {}, [])
-    assert len([c for c in captured["messages"][1]["content"] if c["type"] == "image_url"]) == 1
+    assert len([c for c in captured["messages"][1]["content"] if c["type"] == "image"]) == 1
+
+    payload["image_modality"] = "cytology_microscopy"
+    payload["via_result"] = "VIA_POSITIVE"
+    rejected = engine.interpret(cervix_image(True), {}, [])
+    assert rejected["via_result"] == "INADEQUATE"

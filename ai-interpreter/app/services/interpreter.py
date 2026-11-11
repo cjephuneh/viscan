@@ -1,7 +1,10 @@
-import base64
 import io
 import json
+import os
+import re
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Protocol
 
 import numpy as np
 from PIL import Image
@@ -144,14 +147,16 @@ VIA_SCHEMA = {
 
 NON_VIA_MODALITIES = {"green_filter", "lugol_iodine", "native_saline", "cytology_microscopy", "not_cervix"}
 
-EMPTY_EXTENDED = {
+_DEFAULT_SWEDE = {"acetowhiteness": 0, "margins_surface": 0, "vessels": 0, "lesion_size": 0}
+
+EMPTY_EXTENDED: dict[str, Any] = {
     "image_quality": {"cervix_fully_visible": False, "focus": "acceptable", "lighting": "acceptable",
                       "glare": "none", "obscured_by": []},
     "lesions": [],
     "cancer_red_flags": {"mass_or_exophytic_growth": False, "ulceration": False, "contact_bleeding": False,
                          "atypical_vessels": False, "necrosis": False, "irregular_contour": False},
     "benign_findings": [],
-    "swede": {"acetowhiteness": 0, "margins_surface": 0, "vessels": 0, "lesion_size": 0},
+    "swede": dict(_DEFAULT_SWEDE),
     "histology_likelihood": None,
     "differential": [],
     "key_observations": [],
@@ -189,12 +194,265 @@ class ReferenceExample:
     notes: str = ""
 
 
-def _to_data_url(image_bytes: bytes, max_side: int = 1536) -> str:
+class ViaInterpreter(Protocol):
+    """The port. Pipeline, API, and rules depend on this, never on a GPU runtime."""
+
+    engine: str
+    model: str
+    uses_references: bool
+
+    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
+                  before_bytes: bytes | None = None) -> dict: ...
+
+
+LOCAL_JSON_INSTRUCTION = (
+    "Return only one JSON object, with no markdown. It must include image_modality, via_result, "
+    "confidence, image_adequacy, image_quality, scj_visibility, transformation_zone_type, findings, "
+    "lesions, cancer_red_flags, benign_findings, swede, histology_likelihood, differential, "
+    "key_observations, recommended_checks, patient_explanation and rationale."
+)
+
+_WEIGHT_FILES = (
+    "model.safetensors", "model.safetensors.index.json",
+    "pytorch_model.bin", "pytorch_model.bin.index.json",
+)
+
+
+def _open_image(image_bytes: bytes, max_side: int = 1024) -> Image.Image:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img.thumbnail((max_side, max_side))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
-    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    return img
+
+
+def weights_ready(path) -> bool:
+    folder = Path(path) if path else None
+    if folder is None or not (folder / "config.json").is_file():
+        return False
+    return any((folder / name).is_file() for name in _WEIGHT_FILES) or any(folder.glob("*.safetensors"))
+
+
+def adapter_ready(path) -> bool:
+    return bool(path) and (Path(path) / "adapter_config.json").is_file()
+
+
+def running_model_name(config) -> str:
+    model_dir = Path(config.get("LOCAL_MODEL_DIR") or "")
+    source = model_dir / "viscan-source.txt"
+    base = source.read_text().strip() if source.is_file() else model_dir.name
+    adapter = config.get("LOCAL_ADAPTER_DIR") or ""
+    if adapter_ready(adapter):
+        return f"{base}+{Path(adapter).name}"
+    return base
+
+
+def resolve_engine(config) -> tuple[str, str | None]:
+    """Which engine a request will use, without loading weights."""
+    mode = (config.get("INTERPRETER_MODE") or "auto").strip().lower()
+    if mode in ("remote", "colab"):
+        return "remote", "remote"
+    ready = weights_ready(config.get("LOCAL_MODEL_DIR"))
+    if mode == "local" or (mode == "auto" and ready):
+        return ("local", running_model_name(config)) if ready else ("local", None)
+    if mode in ("auto", "heuristic"):
+        return "heuristic", HeuristicInterpreter.model
+    raise RuntimeError(f"Unknown INTERPRETER_MODE={mode!r}. Use auto, local, remote, or heuristic.")
+
+
+def build_messages(context: dict, examples: list[ReferenceExample],
+                   before_bytes: bytes | None, image_bytes: bytes) -> list[dict]:
+    """Chat messages for the local vision model. Image parts carry a PIL image."""
+    content: list[dict] = []
+    if examples:
+        content.append({
+            "type": "text",
+            "text": "Reference cases verified by clinicians at this programme "
+                    "(use them to calibrate to local camera and lighting conditions):",
+        })
+        for ex in examples:
+            label = f"Reference case - clinician result: {ex.via_result}."
+            if ex.notes:
+                label += f" Notes: {ex.notes}"
+            content.append({"type": "text", "text": label})
+            content.append({"type": "image", "image": _open_image(ex.image_bytes, 512)})
+    if before_bytes:
+        content.append({
+            "type": "text",
+            "text": "Baseline: native (pre-acetic-acid) view of the same cervix, taken before acetic acid "
+                    "was applied. Whitening that is present ONLY in the post-acetic-acid image below is "
+                    "acetowhite change; whiteness already visible here (e.g. mucus, leukoplakia, glare, "
+                    "nabothian cysts) is not. Interpret and report on the post-acetic-acid image only.",
+        })
+        content.append({"type": "image", "image": _open_image(before_bytes, 768)})
+    content.append({
+        "type": "text",
+        "text": ("Interpret this new VIA image (1 minute after acetic acid)." if before_bytes
+                 else "Interpret this new VIA image.") + f" {_context_text(context)}",
+    })
+    content.append({"type": "image", "image": _open_image(image_bytes)})
+    return [
+        {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT + "\n\n" + LOCAL_JSON_INSTRUCTION}]},
+        {"role": "user", "content": content},
+    ]
+
+
+def _parse_json(text: str) -> dict:
+    raw = text.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        value = None
+        start = raw.find("{")
+        if start >= 0:
+            depth = 0
+            for index, char in enumerate(raw[start:], start):
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            value = json.loads(raw[start:index + 1])
+                        except json.JSONDecodeError:
+                            value = None
+                        break
+        if value is None:
+            raise RuntimeError(f"Local model did not return JSON. Output started: {raw[:300]!r}")
+    if not isinstance(value, dict):
+        raise RuntimeError("Local model returned JSON that is not an object.")
+    return value
+
+
+def _coerce(result: dict) -> dict:
+    if "via_result" not in result or "confidence" not in result:
+        raise RuntimeError("Local model JSON is missing via_result or confidence.")
+    try:
+        result["confidence"] = float(result["confidence"])
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Local model JSON has a non-numeric confidence.") from exc
+    result.setdefault("image_modality", "unclear")
+    result.setdefault("image_adequacy", {"adequate": True, "issues": []})
+    result.setdefault("scj_visibility", "partially_visible")
+    result.setdefault("transformation_zone_type", "undetermined")
+    result.setdefault("findings", {})
+    result.setdefault("rationale", "")
+    swede = dict(_DEFAULT_SWEDE)
+    incoming = result.get("swede") or {}
+    if isinstance(incoming, dict):
+        for key in swede:
+            try:
+                swede[key] = int(incoming.get(key, 0) or 0)
+            except (TypeError, ValueError):
+                swede[key] = 0
+    result["swede"] = swede
+    lesions = []
+    for lesion in result.get("lesions") or []:
+        if not isinstance(lesion, dict):
+            continue
+        raw_box = lesion.get("bbox")
+        box = raw_box if isinstance(raw_box, dict) else {}
+        lesion["bbox"] = {k: box.get(k, 0) for k in ("x", "y", "width", "height")}
+        lesions.append(lesion)
+    result["lesions"] = lesions
+    result = with_defaults(result)
+    return _normalise(result)
+
+
+class LocalVisionInterpreter:
+    """On-device vision model. Loads the base weights once, plus a LoRA adapter when one has been trained."""
+
+    engine = "local"
+    uses_references = True
+    _cache: dict[tuple[str, str], tuple] = {}
+
+    def __init__(self, model_dir: str, adapter_dir: str = "", max_new_tokens: int = 700):
+        self.model_dir = str(model_dir)
+        self.adapter_dir = str(adapter_dir) if adapter_ready(adapter_dir) else ""
+        self.model = running_model_name({
+            "LOCAL_MODEL_DIR": self.model_dir,
+            "LOCAL_ADAPTER_DIR": self.adapter_dir,
+        })
+        self.max_new_tokens = max_new_tokens
+
+    def _ensure_loaded(self):
+        key = (self.model_dir, self.adapter_dir)
+        if key in self._cache:
+            return self._cache[key]
+        import torch
+        from transformers import AutoProcessor
+
+        try:
+            from transformers import AutoModelForImageTextToText as AutoModel
+        except ImportError:
+            from transformers import AutoModelForVision2Seq as AutoModel
+
+        torch.set_num_threads(min(4, os.cpu_count() or 1))
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        processor = AutoProcessor.from_pretrained(self.model_dir)
+        try:
+            net = AutoModel.from_pretrained(self.model_dir, dtype=dtype, low_cpu_mem_usage=True)
+        except TypeError:
+            net = AutoModel.from_pretrained(self.model_dir, dtype=dtype, low_cpu_mem_usage=True)
+        if self.adapter_dir:
+            from peft import PeftModel
+
+            net = PeftModel.from_pretrained(net, self.adapter_dir)
+        net.to(device)
+        net.eval()
+        self._cache[key] = (processor, net)
+        return processor, net
+
+    def generate(self, messages: list[dict]) -> str:
+        processor, net = self._ensure_loaded()
+        import torch
+
+        images = [
+            part["image"]
+            for message in messages
+            for part in message["content"]
+            if isinstance(part, dict) and part.get("type") == "image" and "image" in part
+        ]
+        try:
+            inputs = processor.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+            )
+        except (TypeError, ValueError):
+            prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
+            inputs = processor(text=prompt, images=images or None, return_tensors="pt")
+        if not isinstance(inputs, dict):
+            inputs = dict(inputs)
+        device = next(net.parameters()).device
+        dtype = next(net.parameters()).dtype
+        moved = {}
+        for key, value in inputs.items():
+            if hasattr(value, "to"):
+                value = value.to(device=device, dtype=dtype) if value.is_floating_point() else value.to(device)
+            moved[key] = value
+        inputs = moved
+        input_len = inputs["input_ids"].shape[-1]
+        with torch.inference_mode():
+            output = net.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False)
+        return processor.decode(output[0][input_len:], skip_special_tokens=True)
+
+    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
+                  before_bytes: bytes | None = None) -> dict:
+        text = self.generate(build_messages(context, examples, before_bytes, image_bytes))
+        result = _coerce(_parse_json(text))
+        if result["image_modality"] in NON_VIA_MODALITIES and result["via_result"] != "INADEQUATE":
+            result["image_adequacy"]["issues"].append(
+                f"Image appears to be {result['image_modality'].replace('_', ' ')}, not a white-light "
+                f"acetic-acid photo (model had suggested {result['via_result']})."
+            )
+            result["via_result"] = "INADEQUATE"
+            result["image_adequacy"]["adequate"] = False
+        return result
 
 
 def _context_text(context: dict) -> str:
@@ -226,83 +484,13 @@ def _context_text(context: dict) -> str:
     return ("Patient context: " + "; ".join(parts) + ".") if parts else "No patient context provided."
 
 
-class OpenAIInterpreter:
-    engine = "openai"
-
-    def __init__(self, api_key: str, model: str, reasoning_effort: str = ""):
-        from openai import OpenAI
-
-        self.client = OpenAI(api_key=api_key)
-        self.model = model
-        self.reasoning_effort = reasoning_effort
-
-    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
-                  before_bytes: bytes | None = None) -> dict:
-        content = []
-        if examples:
-            content.append({
-                "type": "text",
-                "text": "Reference cases verified by clinicians at this programme "
-                        "(use them to calibrate to local camera and lighting conditions):",
-            })
-            for ex in examples:
-                label = f"Reference case - clinician result: {ex.via_result}."
-                if ex.notes:
-                    label += f" Notes: {ex.notes}"
-                content.append({"type": "text", "text": label})
-                content.append({"type": "image_url", "image_url": {"url": _to_data_url(ex.image_bytes, 768), "detail": "low"}})
-
-        if before_bytes:
-            content.append({
-                "type": "text",
-                "text": "Baseline: native (pre-acetic-acid) view of the same cervix, taken before acetic acid "
-                        "was applied. Whitening that is present ONLY in the post-acetic-acid image below is "
-                        "acetowhite change; whiteness already visible here (e.g. mucus, leukoplakia, glare, "
-                        "nabothian cysts) is not. Interpret and report on the post-acetic-acid image only.",
-            })
-            content.append({"type": "image_url", "image_url": {"url": _to_data_url(before_bytes, 1024), "detail": "high"}})
-        content.append({
-            "type": "text",
-            "text": ("Interpret this new VIA image (1 minute after acetic acid)." if before_bytes
-                     else "Interpret this new VIA image.") + f" {_context_text(context)}",
-        })
-        content.append({"type": "image_url", "image_url": {"url": _to_data_url(image_bytes), "detail": "high"}})
-
-        is_reasoning = self.model.startswith(("gpt-5", "o1", "o3", "o4"))
-        options = {}
-        if not is_reasoning:
-            options["temperature"] = 0
-        elif self.reasoning_effort:
-            options["reasoning_effort"] = self.reasoning_effort
-        response = self.client.chat.completions.create(
-            model=self.model,
-            **options,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": content},
-            ],
-            response_format={"type": "json_schema", "json_schema": VIA_SCHEMA},
-        )
-        message = response.choices[0].message
-        if getattr(message, "refusal", None):
-            raise RuntimeError(f"Model refused to interpret image: {message.refusal}")
-        result = _normalise(json.loads(message.content))
-        if result["image_modality"] in NON_VIA_MODALITIES and result["via_result"] != "INADEQUATE":
-            result["image_adequacy"]["issues"].append(
-                f"Image appears to be {result['image_modality'].replace('_', ' ')}, not a white-light "
-                f"acetic-acid photo (model had suggested {result['via_result']})."
-            )
-            result["via_result"] = "INADEQUATE"
-            result["image_adequacy"]["adequate"] = False
-        return result
-
-
 class HeuristicInterpreter:
     """Offline colour-based baseline: estimates dense acetowhite epithelium as bright,
     low-saturation pixels in the central (cervical) region. Used for demos, tests and as
     a fallback. Confidence is capped low so every result is routed to clinician review."""
 
     engine = "heuristic"
+    uses_references = False
     model = "acetowhite-hsv-baseline-v1"
 
     def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
@@ -391,13 +579,104 @@ class HeuristicInterpreter:
         return result
 
 
-def build_interpreter(config) -> OpenAIInterpreter | HeuristicInterpreter:
-    mode = config.get("INTERPRETER_MODE", "auto")
-    key = config.get("OPENAI_API_KEY")
-    if mode == "openai" or (mode == "auto" and key):
-        if not key:
-            raise RuntimeError("INTERPRETER_MODE=openai but OPENAI_API_KEY is not set.")
-        return OpenAIInterpreter(key, config["OPENAI_MODEL"], config.get("OPENAI_REASONING_EFFORT", ""))
+class RemoteInterpreter:
+    """Sends the VIA image to a model server. The server can be Colab, Kaggle, or any other GPU."""
+
+    engine = "remote"
+    uses_references = True
+    model = "remote"
+
+    def __init__(self, base_url: str, token: str = "", timeout: int = 300):
+        self.base_url = base_url.rstrip("/")
+        self.token = token
+        self.timeout = timeout
+
+    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
+                  before_bytes: bytes | None = None) -> dict:
+        import urllib.error
+        import urllib.request
+
+        fields = {
+            "context": json.dumps(context),
+            "examples": json.dumps([
+                {"via_result": ex.via_result, "notes": ex.notes} for ex in examples
+            ]),
+        }
+        files = [("image", "via.jpg", image_bytes)]
+        if before_bytes:
+            files.append(("image_before", "before.jpg", before_bytes))
+        for index, ex in enumerate(examples):
+            files.append((f"example_{index}", f"example_{index}.jpg", ex.image_bytes))
+        body, content_type = _multipart(fields, files)
+        request = urllib.request.Request(
+            self.base_url + "/interpret",
+            data=body,
+            method="POST",
+            headers={"Content-Type": content_type, "Authorization": f"Bearer {self.token}"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")[:400]
+            raise RuntimeError(f"Remote model returned {exc.code}: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"Cannot reach the model server at {self.base_url}. "
+                "That runtime may have stopped, or REMOTE_MODEL_URL is from an older session."
+            ) from exc
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Remote model returned non-JSON: {raw[:200]!r}") from exc
+        if not isinstance(result, dict) or "via_result" not in result:
+            message = result.get("error") if isinstance(result, dict) else "empty response"
+            raise RuntimeError(f"Remote model failed: {message}")
+        return result
+
+
+def _multipart(fields: dict[str, str], files: list[tuple[str, str, bytes]]) -> tuple[bytes, str]:
+    boundary = "viscan" + os.urandom(8).hex()
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode()
+        )
+    for name, filename, data in files:
+        chunks.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: application/octet-stream\r\n\r\n".encode()
+            + data + b"\r\n"
+        )
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+def build_interpreter(config) -> ViaInterpreter:
+    engine, name = resolve_engine(config)
+    if engine == "remote":
+        url = (config.get("REMOTE_MODEL_URL") or config.get("COLAB_MODEL_URL") or "").strip()
+        if not url:
+            raise RuntimeError(
+                "INTERPRETER_MODE=remote but REMOTE_MODEL_URL is empty. "
+                "Start the model server on the GPU you want to use and paste its URL."
+            )
+        return RemoteInterpreter(
+            url,
+            config.get("REMOTE_MODEL_TOKEN") or config.get("COLAB_TOKEN") or "",
+            int(config.get("REMOTE_MODEL_TIMEOUT_SECONDS") or config.get("COLAB_TIMEOUT_SECONDS") or 300),
+        )
+    if engine == "local":
+        if name is None:
+            raise RuntimeError(
+                "INTERPRETER_MODE=local but no weights were found in LOCAL_MODEL_DIR. "
+                "Run: python scripts/pull_model.py"
+            )
+        return LocalVisionInterpreter(
+            config["LOCAL_MODEL_DIR"],
+            config.get("LOCAL_ADAPTER_DIR") or "",
+            int(config.get("LOCAL_MAX_NEW_TOKENS") or 700),
+        )
     return HeuristicInterpreter()
 
 

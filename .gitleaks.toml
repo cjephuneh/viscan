@@ -1,0 +1,16 @@
+title = "VIScan"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Example tokens in docs, and local build output."
+paths = [
+  '''(?:^|/)\.venv/''',
+  '''(?:^|/)node_modules/''',
+  '''(?:^|/)ai-interpreter/models/''',
+  '''(?:^|/)frontend/\.next/''',
+  '''package-lock\.json''',
+  '''ai-avatar/FRONTEND_API_GUIDE\.md''',
+  '''ai-interpreter/\.env\.example''',
+]

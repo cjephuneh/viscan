@@ -1,0 +1,24 @@
+---
+description: Ports and adapters for the VIA interpreter. A new GPU runtime must not change the screening flow.
+globs: ai-interpreter/**/*.py
+alwaysApply: false
+---
+
+# VIA interpreter ports and adapters
+
+`app/services/interpreter.py` is the port (`ViaInterpreter`). The API, pipeline, and rules call `build_interpreter` and `interpret`. They do not know the GPU host.
+
+- A new machine that only serves `scripts/model_server.py` is a new `REMOTE_MODEL_URL`. Do not add a mode named after Colab, Kaggle, or any other vendor.
+- A runtime that is not "call this URL" gets a new adapter class with `engine`, `uses_references`, and `interpret`, returned from `build_interpreter` only.
+- Do not import `torch`, `transformers`, `peft`, `huggingface_hub`, `openai`, or `kaggle` from the API, pipeline, or rules.
+- `tests/test_ports.py` is the check. Read `ai-interpreter/AGENTS.md` before adding a runtime.
+
+```python
+# Wrong: the pipeline learns a vendor
+if engine == "colab":
+    ...
+
+# Right: the pipeline asks the port
+if interpreter.uses_references:
+    examples = _reference_examples(...)
+```

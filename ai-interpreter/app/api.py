@@ -17,6 +17,7 @@ from .services.intake import IntakeError, apply_event, create_intake, intake_pay
 from .services.metrics import compute_metrics
 from .services.places import PlacesUnavailable, haversine_km, nearby_pharmacies
 from .services.overlay import render_overlay
+from .services.interpreter import resolve_engine
 from .services.pipeline import PipelineError, analyze_image, build_response
 from .services.storage import get_storage
 from .services.video_report import request_video_report
@@ -125,10 +126,8 @@ def _image_bytes_or_404(image: ViaImage) -> bytes:
 
 @api_bp.get("/health")
 def health():
-    cfg = current_app.config
-    mode = cfg["INTERPRETER_MODE"]
-    engine = "openai" if mode == "openai" or (mode == "auto" and cfg["OPENAI_API_KEY"]) else "heuristic"
-    return jsonify(status="ok", engine=engine, model=cfg["OPENAI_MODEL"] if engine == "openai" else None)
+    engine, model = resolve_engine(current_app.config)
+    return jsonify(status="ok", engine=engine, model=model)
 
 
 @api_bp.post("/interpret")

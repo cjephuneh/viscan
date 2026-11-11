@@ -9,6 +9,7 @@ services:
       - .env
     volumes:
       - viscan-interpreter-data:/data
+      - ./models:/app/models
     ports:
       - "5050:5050"
     restart: unless-stopped

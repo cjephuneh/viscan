@@ -177,7 +177,9 @@ def analyze_image(image_bytes: bytes, fields: dict, before_bytes: bytes | None =
     else:
         interpreter = build_interpreter(current_app.config)
         engine, model = interpreter.engine, interpreter.model
-        examples = _reference_examples(current_app.config["FEWSHOT_EXAMPLES"], sha) if engine == "openai" else []
+        examples = []
+        if getattr(interpreter, "uses_references", False):
+            examples = _reference_examples(current_app.config["FEWSHOT_EXAMPLES"], sha)
         ai = with_defaults(interpreter.interpret(image_bytes, context, examples, before_bytes=before_bytes))
     latency_ms = int((time.perf_counter() - started) * 1000)
 

@@ -69,7 +69,7 @@ Errors return a JSON body `{"error": "<message>"}`.
 | 401 | Missing/invalid `X-API-Key` |
 | 404 | Resource not found |
 | 413 | Image larger than 10 MB |
-| 502 | The AI provider call failed (e.g. OpenAI unavailable, model access denied) |
+| 502 | The local vision model failed (weights missing, or the model did not return JSON) |
 
 ## Enumerations
 
@@ -106,17 +106,17 @@ Errors return a JSON body `{"error": "<message>"}`.
 Liveness check; never requires an API key.
 
 ```json
-{ "status": "ok", "engine": "openai", "model": "gpt-5" }
+{ "status": "ok", "engine": "local", "model": "HuggingFaceTB/SmolVLM-256M-Instruct" }
 ```
 
-`engine` is `openai` when an OpenAI key is configured, otherwise `heuristic` (offline baseline).
+`engine` is `local` when vision weights are installed, otherwise `heuristic` (offline colour baseline). After a fine-tune, `model` names the base checkpoint plus the adapter.
 
 ---
 
 ### `POST /interpret`
 
 Upload one VIA image and receive the full interpretation. The image, visit, AI output, lesions and
-assessment are stored. Typical latency with `gpt-5` is 30-60 s.
+assessment are stored. On CPU the local vision model can take a few minutes.
 
 **Request** — `multipart/form-data`
 
@@ -297,7 +297,7 @@ curl -X POST http://localhost:5050/api/v1/interpret \
   "visit": { "id": 1, "age_at_visit": 38, "hiv_status": "positive", "hpv_status": "positive",
              "symptoms": ["postcoital_bleeding"], "pregnant": false, "parity": 3, "...": "..." },
   "review_status": "pending",
-  "engine": { "name": "openai", "model": "gpt-5", "latency_ms": 56000, "reference_examples": [] },
+  "engine": { "name": "local", "model": "HuggingFaceTB/SmolVLM-256M-Instruct", "latency_ms": 56000, "reference_examples": [] },
   "links": {
     "self": "/api/v1/interpretations/1",
     "image": "/api/v1/images/1/file",
@@ -507,7 +507,7 @@ Programme and model performance.
 ```json
 {
   "total_interpretations": 42,
-  "by_engine": { "openai": 40, "heuristic": 2 },
+  "by_engine": { "local": 40, "heuristic": 2 },
   "by_verdict": { "SUSPICIOUS": 9, "NOT_SUSPICIOUS": 28, "INDETERMINATE": 5 },
   "by_via_result": { "VIA_NEGATIVE": 28, "VIA_POSITIVE": 8, "SUSPICIOUS_FOR_CANCER": 1, "INADEQUATE": 5 },
   "by_review_status": { "pending": 12, "reviewed": 27, "disputed": 3 },
@@ -781,10 +781,11 @@ by `clinician_id`, `interpretation_id`, `limit`.
 1. **Validation & storage** — image type/size checked, SHA-256 computed, file stored.
 2. **Local quality gate** — resolution, brightness, blur (Laplacian variance), glare and colour
    profile. Blocking failures return `INADEQUATE` without an AI call.
-3. **Vision model** — OpenAI (`OPENAI_MODEL`, default `gpt-5`) with a strict JSON schema and a
-   WHO/IARC VIA prompt. The model first identifies the image modality; only white-light
-   acetic-acid photos receive a VIA read (enforced in code). Up to `FEWSHOT_EXAMPLES`
-   clinician-verified cases are included as reference images.
+3. **Vision model** — local weights in `LOCAL_MODEL_DIR` (default SmolVLM-256M, replaceable
+   with a fine-tuned Llama 3.2 Vision adapter) and a WHO/IARC VIA prompt. The model returns
+   JSON. It first identifies the image modality; only white-light acetic-acid photos receive
+   a VIA read (enforced in code). Up to `FEWSHOT_EXAMPLES` clinician-verified cases are
+   included as reference images.
 4. **Clinical rules engine** (deterministic, `app/services/rules.py`)
    - verdict mapping and risk index (itemised points)
    - modified Swede score interpretation
@@ -796,8 +797,8 @@ by `clinician_id`, `interpretation_id`, `limit`.
 5. **Persistence** — visit, image, interpretation, lesions and assessment are stored; the case
    enters the worklist as `pending`.
 
-Without an OpenAI key the app falls back to an offline colour-heuristic baseline with capped
-confidence (demo/testing only).
+With no weights in `LOCAL_MODEL_DIR` the app falls back to an offline colour-heuristic baseline
+with capped confidence (demo/testing only).
 
 ## Data model
 
@@ -823,10 +824,14 @@ Tables are created automatically on startup.
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | – | Enables the OpenAI vision engine |
-| `OPENAI_MODEL` | `gpt-5` | Vision model |
-| `OPENAI_REASONING_EFFORT` | – | `minimal`/`low`/`medium`/`high` for reasoning models (lower = faster) |
-| `INTERPRETER_MODE` | `auto` | `auto`, `openai`, `heuristic` |
+| `INTERPRETER_MODE` | `auto` | `auto`, `local`, `remote`, `heuristic` |
+| `REMOTE_MODEL_URL` | – | URL of `scripts/model_server.py` on any GPU runtime |
+| `REMOTE_MODEL_TOKEN` | – | Bearer token that server was started with |
+| `REMOTE_MODEL_TIMEOUT_SECONDS` | `300` | How long a request waits for that server |
+| `LOCAL_MODEL_ID` | `HuggingFaceTB/SmolVLM-256M-Instruct` | Repo `scripts/pull_model.py` downloads |
+| `LOCAL_MODEL_DIR` | `models/base` | Folder of base weights |
+| `LOCAL_ADAPTER_DIR` | `models/viscan-via-adapter` | LoRA adapter from `scripts/finetune_via.py`, used when present |
+| `LOCAL_MAX_NEW_TOKENS` | `700` | Generation cap for the JSON reply |
 | `FEWSHOT_EXAMPLES` | `2` | Clinician-verified reference images sent per request |
 | `REVIEW_CONFIDENCE_THRESHOLD` | `0.75` | Below this, results are flagged for priority review |
 | `VISCAN_API_KEY` | – | Require `X-API-Key` on all API calls |

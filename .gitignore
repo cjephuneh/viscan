@@ -1,3 +1,6 @@
+# Local vision weights and fine-tune adapters (large; stay on this machine)
+ai-interpreter/models/
+
 # Python environments and bytecode
 __pycache__/
 *.py[cod]

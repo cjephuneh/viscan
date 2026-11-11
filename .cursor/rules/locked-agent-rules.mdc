@@ -1,0 +1,36 @@
+---
+description: Standing rules for every coding agent. Follow them. Do not rewrite them.
+alwaysApply: true
+---
+
+# Locked agent rules
+
+Follow these rules on every change. Do not edit, delete, rename, or loosen the rule files unless the user explicitly asks to change the rules.
+
+Locked files:
+
+- `.cursor/rules/*.mdc`
+- `AGENTS.md`
+- `ai-interpreter/AGENTS.md`
+- `ai-interpreter/CLAUDE.md`
+- `ai-interpreter/tests/test_ports.py`
+- `.github/workflows/ci.yml` (the jobs and the check name below)
+
+## Writing code
+
+- The screening flow calls `build_interpreter` and `interpret`. It does not name Colab, Kaggle, OpenAI, CUDA, torch, or transformers.
+- A new GPU host that serves `scripts/model_server.py` is a new `REMOTE_MODEL_URL`.
+- A runtime that is not "call this URL" is a new adapter in `app/services/interpreter.py`, with `engine`, `uses_references`, and `interpret`.
+- Keep every CI gate: secret scan, type check, unit and integration, code injection, memory, AI contract. The Kaggle job runs only after those gates, on `main`.
+- Leave the check name `all tests passed`. Production deploys on that name.
+- Leave the Kaggle job waiting unless `KAGGLE_API_TOKEN`, `KAGGLE_KERNEL_SLUG`, and `KAGGLE_DATASET` are set.
+- Do not commit tokens, model weights, or Malhari images.
+- Training settings go in `kaggle/viscan-train/train.py` and `ai-interpreter/scripts/finetune_via.py`.
+
+```yaml
+# Wrong: drop a gate so the workflow goes green
+needs: [backend, frontend]
+
+# Right: every gate still blocks the Kaggle job and the deploy check
+needs: [secret-scan, backend, ai-interpreter, ai-avatar, frontend]
+```

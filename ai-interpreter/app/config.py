@@ -42,9 +42,19 @@ class Config:
     S3_FORCE_PATH_STYLE = os.getenv("S3_FORCE_PATH_STYLE", "true").lower() in ("1", "true", "yes")
     S3_PREFIX = os.getenv("S3_PREFIX", "interpreter/")
 
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
-    OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "")
+    # Local vision model. `auto` uses the weights in LOCAL_MODEL_DIR when they
+    # exist, and the colour heuristic otherwise. A LoRA adapter in
+    # LOCAL_ADAPTER_DIR is applied on top of the base weights when present.
+    LOCAL_MODEL_ID = os.getenv("LOCAL_MODEL_ID", "HuggingFaceTB/SmolVLM-256M-Instruct")
+    LOCAL_MODEL_DIR = os.getenv("LOCAL_MODEL_DIR", str(BASE_DIR / "models" / "base"))
+    LOCAL_ADAPTER_DIR = os.getenv("LOCAL_ADAPTER_DIR", str(BASE_DIR / "models" / "viscan-via-adapter"))
+    LOCAL_MAX_NEW_TOKENS = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "700"))
+    # A model server on any GPU runtime (Colab, Kaggle, a VM). The app only stores the URL.
+    REMOTE_MODEL_URL = os.getenv("REMOTE_MODEL_URL", os.getenv("COLAB_MODEL_URL", "")).strip()
+    REMOTE_MODEL_TOKEN = os.getenv("REMOTE_MODEL_TOKEN", os.getenv("COLAB_TOKEN", "")).strip()
+    REMOTE_MODEL_TIMEOUT_SECONDS = int(os.getenv(
+        "REMOTE_MODEL_TIMEOUT_SECONDS", os.getenv("COLAB_TIMEOUT_SECONDS", "300"),
+    ))
     INTERPRETER_MODE = os.getenv("INTERPRETER_MODE", "auto")
     FEWSHOT_EXAMPLES = int(os.getenv("FEWSHOT_EXAMPLES", "2"))
     REVIEW_CONFIDENCE_THRESHOLD = float(os.getenv("REVIEW_CONFIDENCE_THRESHOLD", "0.75"))
