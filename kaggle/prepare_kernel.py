@@ -6,15 +6,36 @@ images, or env files. Training images stay on Kaggle as a dataset attachment.
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 
 from scan_secrets import find_secrets
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "ai-interpreter"
+
+
+def _embed_source(dest: Path) -> None:
+    """Put app/ and scripts/ inside train.py so Kaggle does not download GitHub."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for folder in ("app", "scripts"):
+            for path in (dest / folder).rglob("*"):
+                if path.is_file() and "__pycache__" not in path.parts and not path.name.endswith(".pyc"):
+                    archive.write(path, path.relative_to(dest).as_posix())
+        archive.write(dest / "requirements-model.txt", "requirements-model.txt")
+    payload = base64.b64encode(buffer.getvalue()).decode("ascii")
+    script = dest / "train.py"
+    marker = 'BUNDLED_SOURCE = ""'
+    text = script.read_text()
+    if marker not in text:
+        raise SystemExit("train.py is missing the bundle marker.")
+    script.write_text(text.replace(marker, f'BUNDLED_SOURCE = "{payload}"', 1))
 
 
 def prepare(dest: Path, kernel_slug: str = "", dataset_slug: str = "") -> None:
@@ -42,6 +63,7 @@ def prepare(dest: Path, kernel_slug: str = "", dataset_slug: str = "") -> None:
     if secrets:
         shutil.rmtree(dest)
         raise SystemExit("Refusing to package secrets:\n" + "\n".join(secrets))
+    _embed_source(dest)
 
     metadata = {
         "id": kernel_slug or "owner/viscan-via-train",

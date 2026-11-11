@@ -13,8 +13,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-# Public checkout used when Kaggle executes this file alone as /kaggle/src/script.py.
-GITHUB_ARCHIVE = "https://github.com/cjephuneh/viscan/archive/refs/heads/main.tar.gz"
+# prepare_kernel.py replaces this with a base64 zip of app/ and scripts/.
+# The Kaggle session does not fetch that code over the network.
+BUNDLED_SOURCE = ""
 
 # Free Kaggle GPUs fit this model. Set VISCAN_BASE_MODEL to a larger id when the GPU can hold it.
 DEFAULT_BASE_MODEL = "HuggingFaceTB/SmolVLM-256M-Instruct"
@@ -64,23 +65,31 @@ def _is_project(path: Path) -> bool:
     return (path / "scripts" / "finetune_via.py").is_file() and (path / "app").is_dir()
 
 
-def _download_repo(dest: Path) -> Path:
+def _unpack_bundle() -> Path | None:
+    """Unpack the training code carried inside this file. No network call."""
+    if not BUNDLED_SOURCE:
+        return None
+    import base64
+    import io
+    import zipfile
+
+    working = Path("/kaggle/working")
+    dest = working / "viscan-src" if working.is_dir() else Path(__file__).resolve().parent / "viscan-src"
+    if _is_project(dest):
+        return dest
     dest.mkdir(parents=True, exist_ok=True)
-    archive = dest / "viscan-main.tar.gz"
-    subprocess.check_call(["curl", "-fsSL", GITHUB_ARCHIVE, "-o", str(archive)])
-    subprocess.check_call(["tar", "-xzf", str(archive), "-C", str(dest)])
-    extracted = next(dest.glob("viscan-*/ai-interpreter"))
-    if not _is_project(extracted):
-        raise SystemExit(f"The public repository unpack at {extracted} has no scripts package.")
-    return extracted
+    with zipfile.ZipFile(io.BytesIO(base64.b64decode(BUNDLED_SOURCE))) as archive:
+        archive.extractall(dest)
+    if not _is_project(dest):
+        raise SystemExit(f"The bundled source at {dest} has no scripts package.")
+    return dest
 
 
 def project_root() -> Path:
-    """Find ai-interpreter.
+    """Find ai-interpreter without contacting GitHub.
 
-    Kaggle runs this file by itself at /kaggle/src/script.py and does not place
-    the scripts package next to it. A checkout, VISCAN_SOURCE, or the public
-    GitHub archive supplies the package. None of that loads the model.
+    Kaggle runs this file by itself at /kaggle/src/script.py. The package is
+    either beside a local checkout or zipped into BUNDLED_SOURCE by CI.
     """
     here = Path(__file__).resolve().parent
     for candidate in [here, *here.parents]:
@@ -102,11 +111,12 @@ def project_root() -> Path:
             package = manifest.parents[1]
             if _is_project(package):
                 return package
-    if Path("/kaggle/working").is_dir():
-        return _download_repo(Path("/kaggle/working/viscan-src"))
+    bundled = _unpack_bundle()
+    if bundled is not None:
+        return bundled
     raise SystemExit(
-        "This file is running alone, with no scripts package beside it. "
-        "Set VISCAN_SOURCE to the repository, or run on Kaggle so the public archive can be unpacked."
+        "This file is running alone, with no scripts package beside it and no bundled source. "
+        "The kernel package is built by kaggle/prepare_kernel.py."
     )
 
 

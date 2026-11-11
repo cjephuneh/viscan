@@ -117,6 +117,23 @@ def test_kernel_entry_rejects_a_flat_folder_without_grades(tmp_path):
     assert train.unlabeled_reason(graded) is None
 
 
+def test_bundled_script_unpacks_without_a_network_or_gpu(tmp_path, monkeypatch):
+    """The file Kaggle actually runs carries the package inside it."""
+    dest = tmp_path / "kernel"
+    subprocess.run([sys.executable, str(PREPARE), str(dest)], cwd=REPO, check=True)
+    alone = tmp_path / "alone"
+    alone.mkdir()
+    script = alone / "script.py"
+    script.write_text((dest / "train.py").read_text())
+    monkeypatch.delenv("VISCAN_SOURCE", raising=False)
+    train = _load(script, "bundled_kaggle_script")
+    assert train.BUNDLED_SOURCE
+    project = train.project_root()
+    assert (project / "scripts" / "finetune_via.py").is_file()
+    assert (project / "app" / "services" / "interpreter.py").is_file()
+    assert "curl" not in script.read_text()
+
+
 def test_kaggle_script_finds_the_trainer_without_a_gpu(tmp_path, monkeypatch):
     """Kaggle runs script.py alone. The package lookup must succeed before any model loads."""
     script = tmp_path / "script.py"
