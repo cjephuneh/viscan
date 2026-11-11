@@ -50,6 +50,6 @@ GitHub Actions (`.github/workflows/ci.yml`) is the gate. A Kaggle training push 
 5. Memory tests on the CPU heuristic path.
 6. AI contract tests. CI checks the VIA JSON shape. A live model answer is produced on Kaggle after this passes.
 
-The job `push training job to kaggle` then runs, on `main` only. It packages source with `kaggle/prepare_kernel.py` and pushes a kernel. It does not start when `KAGGLE_API_TOKEN`, `KAGGLE_KERNEL_SLUG`, or `KAGGLE_DATASET` is missing, because this repository does not contain the Malhari images.
+The job `push training job to kaggle` then runs, on `main` only. It packages source with `kaggle/prepare_kernel.py` and pushes a kernel. It does not start when the secret `KAGGLE_API_TOKEN` is missing. The public kernel is `mwimulebienvenu/viscan-via-train` and the public dataset is `mwimulebienvenu/malhari-via`. A repository variable with the same name overrides either id. The images stay on Kaggle, and training stops when that dataset has no CIN folders.
 
 Change training settings in `kaggle/viscan-train/train.py`. Leave the API, pipeline, and rules unaware of Kaggle.

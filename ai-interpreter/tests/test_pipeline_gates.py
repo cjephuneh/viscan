@@ -101,6 +101,22 @@ def test_kernel_entry_sees_a_mounted_manifest(tmp_path, monkeypatch):
     assert train.dataset_dir() == manifest_dir
 
 
+def test_kernel_entry_rejects_a_flat_folder_without_grades(tmp_path):
+    flat = tmp_path / "input"
+    flat.mkdir()
+    (flat / "P01_1.jpg").write_bytes(b"jpg")
+    (flat / "P02_1.jpg").write_bytes(b"jpg")
+    train = _load(REPO / "kaggle/viscan-train/train.py", "viscan_train_flat")
+    reason = train.unlabeled_reason(flat)
+    assert reason is not None
+    assert "CIN1" in reason
+    graded = tmp_path / "graded"
+    (graded / "colposcopic" / "CIN1").mkdir(parents=True)
+    (graded / "colposcopic" / "CIN1" / "P01_1.jpg").write_bytes(b"jpg")
+    (graded / "manifest.csv").write_text("path,label\n")
+    assert train.unlabeled_reason(graded) is None
+
+
 def test_kernel_entry_reports_when_no_dataset_is_mounted(tmp_path, monkeypatch):
     monkeypatch.delenv("VISCAN_DATA_DIR", raising=False)
     train = _load(REPO / "kaggle/viscan-train/train.py", "viscan_train_empty")

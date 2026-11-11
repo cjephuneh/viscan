@@ -11,6 +11,6 @@ Do not edit these rule files unless the user explicitly asks to change the rules
 
 Read `ai-interpreter/AGENTS.md` before changing the interpreter. The screening flow calls `build_interpreter`. A new GPU host is `REMOTE_MODEL_URL`, or a new adapter in `app/services/interpreter.py`.
 
-Keep every CI gate. Secret scan, type check, unit and integration, code injection, memory, and the AI contract run before `push training job to kaggle`. That job stays on `main` and waits for `KAGGLE_API_TOKEN`, `KAGGLE_KERNEL_SLUG`, and `KAGGLE_DATASET`. Do not commit tokens, weights, or Malhari images.
+Keep every CI gate. Secret scan, type check, unit and integration, code injection, memory, and the AI contract run before `push training job to kaggle`. That job stays on `main` and waits for the secret `KAGGLE_API_TOKEN`. The public ids are `mwimulebienvenu/viscan-via-train` and `mwimulebienvenu/malhari-via` unless a repository variable overrides them. Do not commit tokens, weights, or Malhari images.
 
 `ai-interpreter/tests/test_pipeline_gates.py` fails the build when these rules or gates are removed.

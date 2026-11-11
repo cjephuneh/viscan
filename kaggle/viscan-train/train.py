@@ -19,6 +19,31 @@ sys.path.insert(0, str(ROOT))
 DEFAULT_BASE_MODEL = "HuggingFaceTB/SmolVLM-256M-Instruct"
 
 
+GRADES = ("CIN1", "CIN2", "CIN3")
+
+
+def unlabeled_reason(root: Path) -> str | None:
+    """A flat upload keeps the pictures and drops the grade.
+
+    Malhari repeats patient numbers inside each grade, so P01_1.jpg can be
+    CIN1 or CIN2. Training needs the grade in the folder path, plus manifest.csv.
+    """
+    images = [path for path in root.rglob("*") if path.suffix.lower() in {".jpg", ".jpeg", ".png"}]
+    if not images:
+        return None
+    graded = [path for path in images if any(part in GRADES for part in path.parts)]
+    manifest = next(root.rglob("manifest.csv"), None)
+    if graded and manifest is not None:
+        return None
+    return (
+        f"Found {len(images)} images and no CIN folders. "
+        "Names like P01_1.jpg do not say CIN1, CIN2, or CIN3, so this layout cannot train a classifier. "
+        "On the laptop run `python scripts/malhari.py download`, zip that folder, and upload the zip "
+        "as a new version of the Kaggle dataset. Kaggle keeps the folders that are inside a zip. "
+        "The dataset page has no button to create those folders."
+    )
+
+
 def dataset_dir(mount: Path | None = None) -> Path | None:
     override = os.environ.get("VISCAN_DATA_DIR")
     if override and (Path(override) / "manifest.csv").is_file():
@@ -45,10 +70,13 @@ def _ensure_model_libraries() -> None:
 
 def main() -> None:
     data = dataset_dir()
+    mount = Path("/kaggle/input")
     if data is None:
+        reason = unlabeled_reason(mount) if mount.is_dir() else None
         sys.exit(
-            "No training dataset. Attach Malhari on this kernel "
-            "(manifest.csv plus the image folders). This run will not learn."
+            reason
+            or "No training dataset. Attach Malhari on this kernel "
+            "(manifest.csv plus colposcopic/CIN1, CIN2, and CIN3). This run will not learn."
         )
     os.environ["VISCAN_DATA_DIR"] = str(data)
     _ensure_model_libraries()

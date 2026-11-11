@@ -23,7 +23,7 @@ Locked files:
 - A runtime that is not "call this URL" is a new adapter in `app/services/interpreter.py`, with `engine`, `uses_references`, and `interpret`.
 - Keep every CI gate: secret scan, type check, unit and integration, code injection, memory, AI contract. The Kaggle job runs only after those gates, on `main`.
 - Leave the check name `all tests passed`. Production deploys on that name.
-- Leave the Kaggle job waiting unless `KAGGLE_API_TOKEN`, `KAGGLE_KERNEL_SLUG`, and `KAGGLE_DATASET` are set.
+- Leave the Kaggle job waiting unless the secret `KAGGLE_API_TOKEN` is set. The public defaults are `mwimulebienvenu/viscan-via-train` and `mwimulebienvenu/malhari-via`.
 - Do not commit tokens, model weights, or Malhari images.
 - Training settings go in `kaggle/viscan-train/train.py` and `ai-interpreter/scripts/finetune_via.py`.
 
