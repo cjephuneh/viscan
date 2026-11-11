@@ -120,7 +120,19 @@ def project_root() -> Path:
     )
 
 
+def _drop_torchao() -> None:
+    """Kaggle's image ships an old torchao. peft refuses to build LoRA layers
+    while any torchao below 0.16 is installed, and this training never uses it."""
+    import importlib.util
+
+    if importlib.util.find_spec("torchao") is None:
+        return
+    subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", "torchao"])
+    importlib.invalidate_caches()
+
+
 def _ensure_model_libraries(project: Path) -> None:
+    _drop_torchao()
     try:
         import peft  # noqa: F401
         import torch  # noqa: F401
