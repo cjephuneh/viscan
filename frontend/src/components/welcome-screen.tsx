@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BreathingGuide } from "@/components/breathing-guide";
 import { IntakeForm } from "@/components/intake-form";
 import { TopicCard } from "@/components/topic-card";
+import { ViscanMark } from "@/components/viscan-mark";
 import {
   type Intake,
   type IntakeEventType,
@@ -329,7 +330,9 @@ export function WelcomeScreen() {
       <div className="welcome-glow" aria-hidden="true" />
       <header className="welcome-top">
         <p className="welcome-brand">
-          <span className="mark-dot" aria-hidden="true" /> VISCAN
+          <span className="brand-logo" aria-hidden="true">
+            <ViscanMark size="lg" />
+          </span>
         </p>
         <Link href="/dashboard" className="staff-link">
           Staff area →

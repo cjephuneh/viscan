@@ -22,11 +22,10 @@ export function ClinicNav() {
     <header className="clinic-bar">
       <div className="clinic-bar-inner">
         <Link href="/dashboard" className="clinic-brand" aria-label="VISCAN overview">
-          <span className="mark" aria-hidden="true">
-            <ViscanMark />
+          <span className="brand-logo" aria-hidden="true">
+            <ViscanMark size="lg" />
           </span>
-          <span>
-            <strong>VISCAN</strong>
+          <span className="brand-meta">
             <small>Clinic workspace</small>
           </span>
         </Link>
@@ -44,7 +43,7 @@ export function ClinicNav() {
             })}
           </ul>
         </nav>
-        <Link href="/patient" className="clinic-checkin">
+        <Link href="/patient" className="clinic-checkin" aria-label="Open patient check-in">
           Patient check-in
         </Link>
       </div>
