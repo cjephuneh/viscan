@@ -1,12 +1,19 @@
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from flask import Flask
+if TYPE_CHECKING:
+    from flask import Flask
 
-from .config import Config
-from .models import db
+# Flask and the database load inside create_app. Training scripts import
+# app.services.interpreter on hosts that only install requirements-model.txt.
 
 
-def create_app(overrides: dict | None = None) -> Flask:
+def create_app(overrides: dict | None = None) -> "Flask":
+    from flask import Flask
+
+    from .config import Config
+    from .models import db
+
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
     if overrides:
