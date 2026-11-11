@@ -183,6 +183,6 @@ jobs:
           KAGGLE_DATASET: ${{ vars.KAGGLE_DATASET || 'mwimulebienvenu/malhari-via' }}
         run: |
           set -euo pipefail
-          pip install kaggle
+          pip install 'kaggle==2.2.5' six
           python kaggle/prepare_kernel.py "$RUNNER_TEMP/viscan-kernel" "$KAGGLE_KERNEL_SLUG" "$KAGGLE_DATASET"
           kaggle kernels push -p "$RUNNER_TEMP/viscan-kernel"
