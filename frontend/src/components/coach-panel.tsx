@@ -298,25 +298,10 @@ export function CoachPanel({
 
       {stage === "intro" ? (
         <div className="coach-intro">
-          <p className="coach-pitch">
-            {interpretation
-              ? `Not sure what this reading means or what to do next? ${name} has studied this case and can walk you through it, quiz you, or let you rehearse telling the patient.`
-              : `Practise reading VIA results and managing positive screens with ${name}, then test yourself with a quiz or a role-play.`}
-          </p>
-          <ul className="coach-skills">
-            <li>Points at each part of the result as she explains it</li>
-            <li>Builds a step-by-step action plan</li>
-            <li>Quizzes you and keeps score</li>
-            <li>Plays the patient so you can practise counselling</li>
-          </ul>
           <button type="button" className="primary big" onClick={begin} disabled={starting || !persona.available}>
             {starting ? "Starting…" : `Start lesson with ${name}`}
           </button>
-          <p className="quiet small">
-            {persona.available
-              ? `${name} is an AI coach. She teaches from WHO guidance and this reading; you make the clinical decision.`
-              : `${name} is offline right now.`}
-          </p>
+          {persona.available ? null : <p className="quiet small">{name} is offline right now.</p>}
           {error ? <p className="error">{error}</p> : null}
         </div>
       ) : null}

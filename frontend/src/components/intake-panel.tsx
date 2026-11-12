@@ -79,12 +79,17 @@ export function IntakeSummary({ intake, onClear }: { intake: Intake; onClear: ()
           </div>
         ) : null}
       </div>
-      <p className="quiet small">Visit details below were filled in from the check-in. Check them with the patient.</p>
     </article>
   );
 }
 
-export function CheckedInPatients({ onSelect }: { onSelect: (intake: Intake) => void }) {
+export function CheckedInPatients({
+  onSelect,
+  empty = null,
+}: {
+  onSelect: (intake: Intake) => void;
+  empty?: string | null;
+}) {
   const [waiting, setWaiting] = useState<Intake[]>([]);
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -149,9 +154,9 @@ export function CheckedInPatients({ onSelect }: { onSelect: (intake: Intake) => 
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="quiet small">Patients who check in with Mia on the welcome screen appear here.</p>
-      )}
+      ) : empty ? (
+        <p className="quiet small">{empty}</p>
+      ) : null}
     </section>
   );
 }

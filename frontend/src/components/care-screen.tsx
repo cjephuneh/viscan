@@ -133,7 +133,6 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
           <span aria-hidden="true">/</span>
           <span aria-current="page">Care</span>
         </nav>
-        <p className="eyebrow">After the screen</p>
         <h1 className="care-title">Referral &amp; nearby care</h1>
         {careError ? <p className="error">{careError}</p> : null}
         {care ? (
@@ -154,10 +153,7 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
       <div className="care-grid">
         <section className="panel map-panel" aria-labelledby="map-title">
           <div className="panel-head">
-            <div>
-              <p className="eyebrow">Map</p>
-              <h2 id="map-title">Around the patient</h2>
-            </div>
+            <h2 id="map-title">Around the patient</h2>
             <label className="field radius-field">
               <span>Search radius</span>
               <select value={radius} onChange={(event) => setRadius(Number(event.target.value))}>
@@ -185,10 +181,7 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
 
         <section className="panel" aria-labelledby="partners-title">
           <div className="panel-head">
-            <div>
-              <p className="eyebrow">Refer</p>
-              <h2 id="partners-title">Partner hospitals</h2>
-            </div>
+            <h2 id="partners-title">Partner hospitals</h2>
             <p className="panel-status">{hospitals.length} available</p>
           </div>
           <label className="field">
@@ -257,10 +250,7 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
 
         <section className="panel" aria-labelledby="pharm-title">
           <div className="panel-head">
-            <div>
-              <p className="eyebrow">Supplies</p>
-              <h2 id="pharm-title">Nearby pharmacies</h2>
-            </div>
+            <h2 id="pharm-title">Nearby pharmacies</h2>
             <p className="panel-status">
               {pharmacyState === "loading" ? "Searching…" : `${pharmacies.length} within ${radius / 1000} km`}
             </p>
@@ -312,7 +302,7 @@ export function CareScreen({ interpretationId }: { interpretationId: number }) {
               </li>
             ))}
           </ul>
-          <p className="footnote">Pharmacy data © OpenStreetMap contributors. Check opening hours before sending a patient.</p>
+          <p className="footnote">Pharmacy data © OpenStreetMap contributors.</p>
         </section>
 
         <section className="panel" aria-label="Video report">

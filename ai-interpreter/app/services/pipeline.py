@@ -47,6 +47,7 @@ def _create_visit(patient: Patient | None, fields: dict) -> ScreeningVisit:
         contraception=fields.get("contraception"),
         previously_treated=fields.get("previously_treated"),
         previous_screening_result=fields.get("previous_screening_result"),
+        site=fields.get("site"),
         symptoms=fields.get("symptoms") or [],
         clinician_id=fields.get("clinician_id"),
         notes=fields.get("notes"),

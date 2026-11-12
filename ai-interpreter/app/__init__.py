@@ -35,8 +35,10 @@ def create_app(overrides: dict | None = None) -> "Flask":
         _ensure_columns(db)
         if app.config["SEED_DEMO_PARTNERS"]:
             from .services.care import seed_demo_partners
+            from .services.demo_clients import seed_demo_clients
 
             seed_demo_partners(app.config["DEFAULT_LATITUDE"], app.config["DEFAULT_LONGITUDE"])
+            seed_demo_clients()
 
     return app
 
@@ -45,6 +47,7 @@ def create_app(overrides: dict | None = None) -> "Flask":
 # tables, so existing databases get them here (idempotent).
 _ADDED_COLUMNS = (
     ("via_image", "capture", "VARCHAR(32)"),
+    ("screening_visit", "site", "VARCHAR(128)"),
 )
 
 

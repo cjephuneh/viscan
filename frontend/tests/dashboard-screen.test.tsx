@@ -78,6 +78,6 @@ describe("DashboardScreen", () => {
       "/screenings?status=pending&sort=risk",
     );
     expect(await screen.findByText("No overdue follow-ups.")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Checked in and waiting" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Checked in and waiting" })).not.toBeInTheDocument();
   });
 });

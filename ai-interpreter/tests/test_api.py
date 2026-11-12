@@ -587,6 +587,22 @@ def test_patient_lookup_prefills_returning_patient(client):
     assert client.get("/api/v1/patients/lookup").status_code == 400
 
 
+def test_demo_client_ids_prefill_the_visit(client):
+    found = client.get("/api/v1/patients/lookup?external_id=0013").json
+    assert found["found"] is True
+    assert found["prefill"]["age"] == 38
+    assert found["prefill"]["hiv_status"] == "positive"
+    assert found["prefill"]["hpv_status"] == "positive"
+    assert found["prefill"]["previously_treated"] is True
+    assert found["prefill"]["symptoms"] == ["postcoital_bleeding"]
+    assert found["prefill"]["site"] == "Muhima Health Centre"
+    assert found["previous_screens"] == []
+
+    ids = [client.get(f"/api/v1/patients/lookup?external_id={n}").json["found"] for n in
+           ("0012", "0013", "0014", "0015", "0016", "0017")]
+    assert ids == [True, True, True, True, True, True]
+
+
 def test_returning_patient_history_is_passed_to_ai(local_client, monkeypatch):
     install_fake_local(monkeypatch, model_result())
     upload(local_client, cervix_image(True), patient_external_id="PT-CTX", age="40")

@@ -148,7 +148,7 @@ describe("CoachPanel", () => {
 
   it("offers a practice lesson without a case", async () => {
     render(<CoachPanel variant="page" />);
-    expect(await screen.findByText(/Practise reading VIA results/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Start lesson with Kezia" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start lesson with Kezia" }));
     expect(await screen.findByRole("button", { name: "When can I ablate?" })).toBeInTheDocument();
     const start = fetchMock.mock.calls.find(([u]) => String(u) === "/api/v1/coach/sessions")!;

@@ -245,10 +245,9 @@ describe("ScreeningScreen", () => {
 
   it("prefills the visit from a patient who checked in with Mia and links the reading", async () => {
     fetchMock = mockFetch({ waiting: [intakeFixture] });
-    const { container } = render(<ScreeningScreen />);
-    fireEvent.click(await screen.findByRole("button", { name: /Grace Uwase/ }));
+    const { container } = render(<ScreeningScreen intakeId="5" />);
 
-    expect(screen.getByRole("heading", { name: /Grace Uwase, 38/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /Grace Uwase, 38/ })).toBeInTheDocument();
     expect(screen.getByText("Reports postcoital bleeding.")).toBeInTheDocument();
     expect(screen.getByText(/Arrived very nervous \(5\/5\), now okay \(2\/5\)/)).toBeInTheDocument();
     expect(screen.getByLabelText("Patient ID")).toHaveValue("INT-K7M3Q");

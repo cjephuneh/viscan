@@ -232,22 +232,18 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
     <div className="page screenings">
       <div className="atmosphere" aria-hidden="true" />
       <header className="page-head">
-        <p className="brand-support">Records</p>
         <h1>Past screenings</h1>
-        <p className="hero-lede">
-          Every AI reading in one table. Filter it, export a spreadsheet, or open a single report.
-        </p>
       </header>
 
       {summary ? (
         <ul className="stats" aria-label="Screening totals">
           <Stat label="Screenings" value={summary.total} />
           <Stat label="Suspicious" value={summary.suspicious} tone="alert" />
-          <Stat label="Awaiting review" value={summary.pending_review} />
+          <Stat label="Review" value={summary.pending_review} />
           <Stat label="Referred" value={summary.referred} />
-          <Stat label="Follow-up overdue" value={summary.follow_up_overdue} tone={summary.follow_up_overdue ? "alert" : undefined} />
+          <Stat label="Overdue" value={summary.follow_up_overdue} tone={summary.follow_up_overdue ? "alert" : undefined} />
           <Stat
-            label="Clinician agreed with AI"
+            label="Agreed"
             value={summary.agreement_rate != null ? `${Math.round(summary.agreement_rate * 100)}%` : "—"}
             tone="clear"
           />

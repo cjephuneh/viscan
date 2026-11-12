@@ -353,11 +353,7 @@ export function WelcomeScreen() {
               <h1>
                 Meet <em>{personaName}</em>, your guide for today.
               </h1>
-              <p className="lede">
-                {personaName} is a friendly AI guide. In about five minutes, she&apos;ll explain what VIA screening is,
-                what will happen in the room, and answer your questions, so you walk in calm and ready. A real nurse
-                does the check itself.
-              </p>
+              <p className="lede">A real nurse does the check itself.</p>
             </div>
             <ul className="intro-pills" aria-label="What to expect">
               <li>About 5 minutes</li>

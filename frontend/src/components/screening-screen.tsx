@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { CoachPanel } from "@/components/coach-panel";
-import { CheckedInPatients, IntakeSummary } from "@/components/intake-panel";
+import { IntakeSummary } from "@/components/intake-panel";
 import { SendResults } from "@/components/send-results";
 import { VideoReport } from "@/components/video-report";
 import { ViscanMark } from "@/components/viscan-mark";
@@ -482,23 +482,12 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
         </button>
       </nav>
 
-      <header className="hero">
-        <div className="hero-copy">
-          <p className="brand-support">Supports VIA cervical screening</p>
-          <h1 className="brand-name">New screening</h1>
-          <p className="hero-lede">
-            Place the screening image from the visit, review a reading, and confirm it yourself
-            before anything is treated as final.
-          </p>
-          <div className="hero-actions">
-            <button type="button" className="choose" onClick={focusUpload}>
-              Start with an image
-            </button>
-            <p className="hero-note">AI-assisted reading · clinician confirms every result</p>
-          </div>
-        </div>
-
-        <aside className="hero-aside">
+      <header className="page-head">
+        <h1>New screening</h1>
+        <div className="hero-actions">
+          <button type="button" className="choose" onClick={focusUpload}>
+            Start with an image
+          </button>
           <ol className="flow">
             {FLOW_STEPS.map((label, index) => (
               <li key={label} className={stepState(index)}>
@@ -507,14 +496,11 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               </li>
             ))}
           </ol>
-          <p className="aside-note">
-            The AI reading is decision support. Nothing is final until you confirm it.
-          </p>
-        </aside>
+        </div>
       </header>
 
       <div className="patient-step">
-      {intake ? <IntakeSummary intake={intake} onClear={() => selectIntake(null)} /> : <CheckedInPatients onSelect={selectIntake} />}
+      {intake ? <IntakeSummary intake={intake} onClear={() => selectIntake(null)} /> : null}
 
       <section className="session visit" aria-label="Visit details">
         <div className="visit-grid">
@@ -530,9 +516,11 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 update("patientId", event.target.value);
                 if (event.target.value.trim()) setPatientError("");
               }}
-              placeholder="For example, PT-1042"
+              placeholder="0012"
               aria-invalid={Boolean(patientError)}
-              aria-describedby={patientError ? "patient-error" : "patient-hint"}
+              aria-describedby={
+                patientError ? "patient-error" : lookingUpPatient || patientRecord?.found ? "patient-hint" : undefined
+              }
             />
             {patientError ? (
               <small id="patient-error">{patientError}</small>
@@ -543,9 +531,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 Returning patient · {patientRecord.screenings_count} prior screening
                 {patientRecord.screenings_count === 1 ? "" : "s"} loaded
               </small>
-            ) : (
-              <small id="patient-hint">Required before the reading · re-enter to load history</small>
-            )}
+            ) : null}
           </div>
           <label className="field">
             <span>Age</span>
@@ -665,11 +651,8 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
       <main className="stage">
         <section ref={uploadRef} className="panel" aria-labelledby="capture-title" tabIndex={-1}>
           <div className="panel-head">
-            <div>
-              <p className="eyebrow">Capture</p>
-              <h2 id="capture-title">Screening image</h2>
-            </div>
-            <p className="panel-status">{imageReady ? "Ready for review" : "Waiting for a capture"}</p>
+            <h2 id="capture-title">Screening image</h2>
+            <p className="panel-status">{imageReady ? "Ready" : "Waiting"}</p>
           </div>
 
           <input
@@ -721,7 +704,6 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 <ViscanMark size="md" />
               </div>
               <h3>Place the screening image</h3>
-              <p>White-light photo about one minute after acetic acid. Drop it here or choose it.</p>
               <button type="button" className="choose" onClick={() => inputRef.current?.click()}>
                 Choose image
               </button>
@@ -760,7 +742,6 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               <>
                 <p>
                   <strong>Before acetic acid</strong>
-                  <span>Optional. Gives the AI a baseline so only true acetowhite change is counted.</span>
                 </p>
                 <button
                   type="button"
@@ -793,10 +774,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
 
         <section className="panel result-panel" aria-labelledby="result-title" aria-live="polite">
           <div className="panel-head">
-            <div>
-              <p className="eyebrow">Reading</p>
-              <h2 id="result-title">Interpretation</h2>
-            </div>
+            <h2 id="result-title">Interpretation</h2>
             <p className="panel-status">{panelStatus}</p>
           </div>
 
@@ -805,28 +783,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               <div className="reading-slot">
                 <p className="slot-label">AI reading</p>
                 <p className="slot-title">The reading will appear here</p>
-                <p className="summary">
-                  Add the visit details and a screening image. VISCAN reads it and tells you whether it is
-                  suspicious or not suspicious, then you confirm it yourself.
-                </p>
               </div>
-              <ul className="outcome-preview" aria-label="Possible readings">
-                <li className="outcome-preview-item alert">
-                  <span className="outcome-swatch" aria-hidden="true" />
-                  <div>
-                    <strong>Suspicious</strong>
-                    <span>Referral and pharmacy options if you agree</span>
-                  </div>
-                </li>
-                <li className="outcome-preview-item clear">
-                  <span className="outcome-swatch" aria-hidden="true" />
-                  <div>
-                    <strong>Not suspicious</strong>
-                    <span>Routine follow-up if you agree</span>
-                  </div>
-                </li>
-              </ul>
-              <p className="empty-foot">Nothing is final until a clinician confirms the finding.</p>
             </div>
           ) : null}
 
@@ -835,9 +792,6 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               <div className="reading-slot active">
                 <p className="slot-label">AI reading</p>
                 <p className="slot-title">Ready to read this image</p>
-                <p className="summary">
-                  Check the visit details, then start the reading. It usually takes 30 to 60 seconds.
-                </p>
               </div>
               {apiError ? <p className="error">{apiError}</p> : null}
               <div className="actions">
@@ -853,9 +807,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               <div className="reading-slot active">
                 <p className="slot-label">AI reading</p>
                 <p className="slot-title">Preparing the reading</p>
-                <p className="quiet">
-                  VISCAN is reading the image against the VIA checklist. {elapsed}s elapsed.
-                </p>
+                <p className="quiet">{elapsed}s</p>
               </div>
               <ol className="timeline">
                 {READING_STEPS.map((label, index) => (
@@ -910,7 +862,6 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                   <span className="coach-invite-dot" aria-hidden="true" />
                   <span>
                     <strong>Walk me through this with Kezia</strong>
-                    <small>AI clinical coach · explains the result, the next steps, quizzes you</small>
                   </span>
                 </button>
               ) : null}
@@ -1215,11 +1166,11 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             </div>
           ) : null}
 
-          <p className="footnote">
-            {result
-              ? `Engine: ${result.engine.model} · ${(result.engine.latency_ms / 1000).toFixed(0)} s. ${result.disclaimer}`
-              : "AI readings are decision support. A result is not final until you confirm it."}
-          </p>
+          {result ? (
+            <p className="footnote">
+              Engine: {result.engine.model} · {(result.engine.latency_ms / 1000).toFixed(0)} s. {result.disclaimer}
+            </p>
+          ) : null}
         </section>
       </main>
 

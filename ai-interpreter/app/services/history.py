@@ -75,6 +75,8 @@ def lookup_by_external_id(external_id: str) -> dict:
     )
     visit_data = last_visit.to_dict() if last_visit else None
     site = prior[0].get("site") if prior else None
+    if not site and last_visit is not None:
+        site = last_visit.site
     prefill = {
         "patient_external_id": patient.external_id,
         "age": (last_visit.age_at_visit if last_visit and last_visit.age_at_visit is not None else patient.age),

@@ -1,34 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CheckedInPatients } from "@/components/intake-panel";
 import { type ScreeningPage, type ScreeningQuery, type ScreeningRow, listScreenings } from "@/lib/history";
 import { humanize, verdictLabel, verdictTone } from "@/lib/viscan";
 
 const ACTIONS = [
-  {
-    href: "/screening",
-    title: "Start a screening",
-    body: "Add the visit details and image, get the AI reading, then confirm it.",
-    tone: "primary",
-  },
-  {
-    href: "/patient",
-    title: "Patient check-in",
-    body: "Open the welcome screen so patients can check in with Mia before the exam.",
-  },
-  {
-    href: "/screenings",
-    title: "Past screenings",
-    body: "Search every reading, what was confirmed, referrals and follow-ups.",
-  },
-  {
-    href: "/learn",
-    title: "Train with Kezia",
-    body: "An AI coach explains results, quizzes you and rehearses counselling.",
-  },
+  { href: "/screening", title: "Start a screening", tone: "primary" },
+  { href: "/patient", title: "Patient check-in" },
+  { href: "/screenings", title: "Past screenings" },
+  { href: "/learn", title: "Train with Kezia" },
 ];
 
 const PANELS: { id: string; title: string; empty: string; query: ScreeningQuery; more: string }[] = [
@@ -131,7 +112,6 @@ function ScreeningPanel({ panel }: { panel: (typeof PANELS)[number] }) {
 }
 
 export function DashboardScreen() {
-  const router = useRouter();
   const [summary, setSummary] = useState<ScreeningPage["summary"] | null>(null);
 
   useEffect(() => {
@@ -149,24 +129,15 @@ export function DashboardScreen() {
       <div className="atmosphere" aria-hidden="true" />
 
       <header className="page-head dash-hero">
-        <p className="brand-support">Supports VIA cervical screening</p>
         <h1>Overview</h1>
-        <p className="hero-lede">
-          Check patients in, screen, confirm every AI reading yourself, and follow each patient through to care.
-        </p>
       </header>
 
       <section className="dash-section" aria-label="Quick actions">
-        <div className="dash-section-head">
-          <h2 className="dash-section-title">Start here</h2>
-          <p className="dash-section-note">Common clinic tasks</p>
-        </div>
         <ul className="dash-actions">
           {ACTIONS.map((a) => (
             <li key={a.href}>
               <Link href={a.href} className={a.tone === "primary" ? "dash-action primary-action" : "dash-action"}>
-                <strong>{a.title}</strong>
-                <span>{a.body}</span>
+                {a.title}
               </Link>
             </li>
           ))}
@@ -175,10 +146,6 @@ export function DashboardScreen() {
 
       {summary ? (
         <section className="dash-section" aria-label="Screening totals">
-          <div className="dash-section-head">
-            <h2 className="dash-section-title">At a glance</h2>
-            <p className="dash-section-note">Clinic screening totals</p>
-          </div>
           <ul className="stats">
             <li className="stat">
               <strong>{summary.total}</strong>
@@ -190,7 +157,7 @@ export function DashboardScreen() {
             </li>
             <li className="stat">
               <strong>{summary.pending_review}</strong>
-              <span>Awaiting review</span>
+              <span>Review</span>
             </li>
             <li className="stat">
               <strong>{summary.referred}</strong>
@@ -198,23 +165,18 @@ export function DashboardScreen() {
             </li>
             <li className={summary.follow_up_overdue ? "stat alert" : "stat"}>
               <strong>{summary.follow_up_overdue}</strong>
-              <span>Follow-up overdue</span>
+              <span>Overdue</span>
             </li>
             <li className="stat clear">
               <strong>{summary.agreement_rate != null ? `${Math.round(summary.agreement_rate * 100)}%` : "—"}</strong>
-              <span>Clinician agreed with AI</span>
+              <span>Agreed</span>
             </li>
           </ul>
         </section>
       ) : null}
 
       <section className="dash-section dash-work" aria-label="Clinic work">
-        <div className="dash-section-head">
-          <h2 className="dash-section-title">Today’s work</h2>
-          <p className="dash-section-note">Waiting patients and readings that need attention</p>
-        </div>
         <div className="dash-work-stack">
-          <CheckedInPatients onSelect={(intake) => router.push(`/screening?intake=${intake.id}`)} />
           <div className="dash-grid">
             {PANELS.map((panel) => (
               <ScreeningPanel key={panel.id} panel={panel} />

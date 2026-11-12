@@ -29,14 +29,14 @@ export function ViscanMark({ className, size = "md" }: ViscanMarkProps) {
     >
       <defs>
         <linearGradient id={`${uid}-v`} x1="2" y1="8" x2="48" y2="64" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#6b9af5" />
-          <stop offset="0.4" stopColor="#2f6fed" />
-          <stop offset="1" stopColor="#1a4499" />
+          <stop stopColor="#fff4f9" />
+          <stop offset="0.5" stopColor="#f7c1dc" />
+          <stop offset="1" stopColor="#e7a0c8" />
         </linearGradient>
         <linearGradient id={`${uid}-rest`} x1="46" y1="18" x2="198" y2="54" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#4d84f0" />
-          <stop offset="0.55" stopColor="#2f6fed" />
-          <stop offset="1" stopColor="#3b82c4" />
+          <stop stopColor="#fff0f6" />
+          <stop offset="0.55" stopColor="#f3b7d4" />
+          <stop offset="1" stopColor="#e7a0c8" />
         </linearGradient>
         <linearGradient id={`${uid}-sheen`} x1="4" y1="16" x2="200" y2="52" gradientUnits="userSpaceOnUse">
           <stop stopColor="#ffffff" stopOpacity="0" />
@@ -44,15 +44,15 @@ export function ViscanMark({ className, size = "md" }: ViscanMarkProps) {
           <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
         </linearGradient>
         <linearGradient id={`${uid}-sweep`} x1="8" y1="62" x2="198" y2="62" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#6b9af5" stopOpacity="0" />
-          <stop offset="0.15" stopColor="#6b9af5" />
-          <stop offset="0.5" stopColor="#2f6fed" />
-          <stop offset="0.85" stopColor="#3b82c4" />
-          <stop offset="1" stopColor="#3b82c4" stopOpacity="0" />
+          <stop stopColor="#f0b4d4" stopOpacity="0" />
+          <stop offset="0.15" stopColor="#f0b4d4" />
+          <stop offset="0.5" stopColor="#c45b93" />
+          <stop offset="0.85" stopColor="#2f6b52" />
+          <stop offset="1" stopColor="#2f6b52" stopOpacity="0" />
         </linearGradient>
         <radialGradient id={`${uid}-halo`} cx="28" cy="36" r="28" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#e8f0fe" stopOpacity="0.85" />
-          <stop offset="1" stopColor="#e8f0fe" stopOpacity="0" />
+          <stop stopColor="#f8e8f3" stopOpacity="0.85" />
+          <stop offset="1" stopColor="#f8e8f3" stopOpacity="0" />
         </radialGradient>
         <filter id={`${uid}-glow`} x="-25%" y="-25%" width="150%" height="150%">
           <feGaussianBlur stdDeviation="1.2" result="blur" />
@@ -76,7 +76,7 @@ export function ViscanMark({ className, size = "md" }: ViscanMarkProps) {
           letterSpacing="-0.035em"
         >
           <tspan
-            fill={`url(#${uid}-v)`}
+            fill="var(--mark-ink)"
             fontSize="56"
             fontWeight="800"
             letterSpacing="-0.06em"
@@ -84,7 +84,7 @@ export function ViscanMark({ className, size = "md" }: ViscanMarkProps) {
             V
           </tspan>
           <tspan
-            fill={`url(#${uid}-rest)`}
+            fill="var(--mark-ink)"
             fontSize="38"
             dx="-2"
             dy="-1"
@@ -118,22 +118,22 @@ export function ViscanMark({ className, size = "md" }: ViscanMarkProps) {
         {/* Spark accents */}
         <path
           d="M48 12l1.2 2.4 2.4 1.2-2.4 1.2L48 19l-1.2-2.4-2.4-1.2 2.4-1.2L48 12z"
-          fill="#6b9af5"
+          fill="#e7a0c8"
         />
         <path
           d="M118 16l0.9 1.8 1.8 0.9-1.8 0.9L118 21.4l-0.9-1.8-1.8-0.9 1.8-0.9L118 16z"
-          fill="#3b82c4"
+          fill="#2f6b52"
           opacity="0.9"
         />
         <path
           d="M178 26l0.75 1.5 1.5 0.75-1.5 0.75L178 30.5l-0.75-1.5-1.5-0.75 1.5-0.75L178 26z"
-          fill="#2f6fed"
+          fill="#c45b93"
           opacity="0.85"
         />
 
         {/* Tiny glow dots */}
-        <circle cx="72" cy="56" r="1.15" fill="#6b9af5" opacity="0.8" />
-        <circle cx="142" cy="56" r="1.15" fill="#3b82c4" opacity="0.8" />
+        <circle cx="72" cy="56" r="1.15" fill="#e7a0c8" opacity="0.8" />
+        <circle cx="142" cy="56" r="1.15" fill="#2f6b52" opacity="0.8" />
       </g>
 
       {/* Magical underline sweep */}

@@ -66,6 +66,7 @@ class ScreeningVisit(db.Model):
     contraception = db.Column(db.String(64))
     previously_treated = db.Column(db.Boolean)
     previous_screening_result = db.Column(db.String(32))
+    site = db.Column(db.String(128))
     symptoms = db.Column(db.JSON)
     clinician_id = db.Column(db.String(64))
     notes = db.Column(db.Text)
@@ -101,6 +102,7 @@ class ScreeningVisit(db.Model):
             "contraception": self.contraception,
             "previously_treated": self.previously_treated,
             "previous_screening_result": self.previous_screening_result,
+            "site": self.site,
             "symptoms": self.symptoms or [],
             "clinician_id": self.clinician_id,
             "notes": self.notes,

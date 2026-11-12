@@ -139,28 +139,22 @@ export function LearnScreen({ initialCaseId = null }: { initialCaseId?: number |
     <div className="page learn">
       <div className="atmosphere" aria-hidden="true" />
       <header className="page-head">
-        <p className="brand-support">Training</p>
         <h1>Learn with Kezia</h1>
-        <p className="hero-lede">
-          An AI clinical coach who explains VIA results on real readings, shows you what to do next, quizzes you, and
-          lets you rehearse telling patients their result.
-        </p>
       </header>
 
       <div className="learn-grid">
         <section className="learn-cases" aria-labelledby="cases-title">
           <label className="field">
-            <span>Your clinician ID (for your training record)</span>
+            <span>Clinician ID</span>
             <input value={clinicianId} onChange={(event) => setClinicianId(event.target.value)} placeholder="For example, nurse-07" />
           </label>
 
           <h2 id="cases-title" className="block-title">
-            Choose what to learn from
+            Cases
           </h2>
           <div className="case-list">
             <button type="button" className={caseId === null ? "case-item on" : "case-item"} onClick={() => pick(null)}>
               <strong>Practice lesson</strong>
-              <span>General VIA reading and management</span>
             </button>
             {cases.map((c) => (
               <button
