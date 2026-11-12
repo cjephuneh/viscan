@@ -6091,3 +6091,171 @@ iframe {
     white-space: normal;
   }
 }
+
+/* Dashboard sidebar and record tables */
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.table-toolbar .block-title {
+  margin: 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.table-wrap.stale {
+  opacity: 0.55;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.data-table th {
+  background: #f7f9fc;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table td small,
+.table-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.data-table td.alert {
+  color: var(--alert);
+  font-weight: 650;
+}
+
+.table-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.screenings-table .badge,
+.screenings-table .status-pill,
+.screenings-table .verdict-pill {
+  margin: 2px 6px 2px 0;
+}
+
+.history-detail-row td {
+  background: #f7f9fc;
+}
+
+.history-detail-row .history-detail {
+  margin: 0;
+}
+
+@media (min-width: 961px) {
+  .clinic-shell {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .clinic-bar {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    width: 248px;
+    height: 100vh;
+    border-bottom: none;
+    border-right: 1px solid var(--line);
+    background: #ffffff;
+  }
+
+  .clinic-bar-inner {
+    max-width: none;
+    height: 100%;
+    margin: 0;
+    padding: 22px 14px 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 18px;
+  }
+
+  .clinic-brand {
+    align-items: flex-start;
+  }
+
+  .clinic-brand .brand-logo .viscan-logo {
+    width: 168px;
+    height: auto;
+  }
+
+  .clinic-bar nav {
+    width: 100%;
+  }
+
+  .clinic-links {
+    flex-direction: column;
+    gap: 4px;
+    overflow: visible;
+  }
+
+  .clinic-links a {
+    white-space: normal;
+  }
+
+  .clinic-links a.on {
+    background: var(--accent-soft);
+    color: var(--accent-mid);
+  }
+
+  .clinic-links a.on::after {
+    display: none;
+  }
+
+  .clinic-checkin {
+    margin-top: auto;
+    margin-left: 0;
+    text-align: center;
+  }
+
+  .clinic-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+}

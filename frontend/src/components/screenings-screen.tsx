@@ -40,6 +40,45 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
   );
 }
 
+const EXPORT_COLUMNS: { header: string; value: (row: ScreeningRow) => string | number | null }[] = [
+  { header: "Reading", value: (row) => row.interpretation_id },
+  { header: "Date", value: (row) => row.created_at },
+  { header: "Patient", value: (row) => row.patient_name },
+  { header: "Patient ID", value: (row) => row.patient_external_id },
+  { header: "Age", value: (row) => row.age },
+  { header: "Site", value: (row) => row.site },
+  { header: "AI verdict", value: (row) => verdictLabel(row.screening_verdict) },
+  { header: "Review", value: (row) => STATUS_LABELS[row.review_status] },
+  { header: "Final result", value: (row) => humanize(row.final_via_result) },
+  { header: "Confirmed by", value: (row) => row.confirmed_by },
+  { header: "Risk", value: (row) => row.risk_score },
+  { header: "Follow-up", value: (row) => row.follow_up_due },
+  { header: "Follow-up overdue", value: (row) => (row.follow_up_overdue ? "yes" : "no") },
+  { header: "Referred to", value: (row) => row.referral?.hospital ?? "" },
+  { header: "Report", value: (row) => row.links.report },
+];
+
+function csvCell(value: string | number | null | undefined) {
+  const text = value == null ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function screeningsCsv(rows: ScreeningRow[]) {
+  const header = EXPORT_COLUMNS.map((column) => csvCell(column.header)).join(",");
+  const lines = rows.map((row) => EXPORT_COLUMNS.map((column) => csvCell(column.value(row))).join(","));
+  return [header, ...lines].join("\n");
+}
+
+function downloadCsv(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function ScreeningItem({ row }: { row: ScreeningRow }) {
   const [open, setOpen] = useState(false);
   const tone = verdictTone(row.screening_verdict);
@@ -47,59 +86,47 @@ function ScreeningItem({ row }: { row: ScreeningRow }) {
   const finalTone = row.final_is_suspicious ? "alert" : row.final_via_result === "VIA_NEGATIVE" ? "clear" : "neutral";
 
   return (
-    <li className={`history-item ${tone}`}>
-      <div className="history-row">
-        <img className="history-thumb" src={row.links.thumbnail} alt="" loading="lazy" />
-        <div className="history-main">
-          <p className="history-who">
-            <strong>{who}</strong>
-            {row.patient_name && row.patient_external_id ? <span>{row.patient_external_id}</span> : null}
-            <span>Reading #{row.interpretation_id}</span>
-          </p>
-          <p className="history-meta">
-            {formatDate(row.created_at)}
-            {row.site ? ` · ${row.site}` : ""}
-            {row.age != null ? ` · ${row.age} yrs` : ""}
-            {row.hiv_status && row.hiv_status !== "unknown" ? ` · HIV ${row.hiv_status}` : ""}
-          </p>
-          <div className="history-badges">
-            <span className={`verdict-pill ${tone}`}>AI: {verdictLabel(row.screening_verdict)}</span>
-            <span className={`status-pill ${row.review_status}`}>{STATUS_LABELS[row.review_status]}</span>
-            {row.referral ? <span className="badge">Referred</span> : null}
-            {row.notifications ? <span className="badge">Result sent</span> : null}
-            {row.coach_sessions ? <span className="badge">Coached</span> : null}
-            {row.follow_up_overdue ? <span className="badge overdue">Follow-up overdue</span> : null}
-          </div>
-        </div>
-        <dl className="history-facts">
-          <div>
-            <dt>Final result</dt>
-            <dd className={finalTone}>
-              {humanize(row.final_via_result)}
-              <small>{row.result_source === "clinician" ? `by ${row.confirmed_by ?? "clinician"}` : "AI, unconfirmed"}</small>
-            </dd>
-          </div>
-          <div>
-            <dt>Risk</dt>
-            <dd>{row.risk_score ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Follow-up</dt>
-            <dd className={row.follow_up_overdue ? "alert" : undefined}>{formatDate(row.follow_up_due, false)}</dd>
-          </div>
-        </dl>
-        <button
-          type="button"
-          className="history-toggle"
-          aria-expanded={open}
-          aria-label={`${open ? "Hide" : "Show"} details for reading ${row.interpretation_id}`}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? "−" : "+"}
-        </button>
-      </div>
-
+    <>
+      <tr className={`history-item ${tone}`}>
+        <td>
+          <strong>{who}</strong>
+          <small className="table-sub">
+            {row.patient_name && row.patient_external_id ? row.patient_external_id : `Reading #${row.interpretation_id}`}
+          </small>
+        </td>
+        <td>{formatDate(row.created_at)}</td>
+        <td>
+          <span className={`verdict-pill ${tone}`}>AI: {verdictLabel(row.screening_verdict)}</span>
+        </td>
+        <td>
+          <span className={`status-pill ${row.review_status}`}>{STATUS_LABELS[row.review_status]}</span>
+          {row.referral ? <span className="badge">Referred</span> : null}
+          {row.follow_up_overdue ? <span className="badge overdue">Follow-up overdue</span> : null}
+        </td>
+        <td className={finalTone}>
+          {humanize(row.final_via_result)}
+          <small>{row.result_source === "clinician" ? `by ${row.confirmed_by ?? "clinician"}` : "AI, unconfirmed"}</small>
+        </td>
+        <td>{row.risk_score ?? "—"}</td>
+        <td className={row.follow_up_overdue ? "alert" : undefined}>{formatDate(row.follow_up_due, false)}</td>
+        <td className="table-actions">
+          <a className="text-button" href={row.links.report} target="_blank" rel="noreferrer">
+            Report
+          </a>
+          <button
+            type="button"
+            className="history-toggle"
+            aria-expanded={open}
+            aria-label={`${open ? "Hide" : "Show"} details for reading ${row.interpretation_id}`}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? "−" : "+"}
+          </button>
+        </td>
+      </tr>
       {open ? (
+        <tr className="history-detail-row">
+          <td colSpan={8}>
         <div className="history-detail">
           <figure>
             <img src={row.links.overlay} alt={`AI annotated image for reading ${row.interpretation_id}`} />
@@ -142,8 +169,10 @@ function ScreeningItem({ row }: { row: ScreeningRow }) {
             </div>
           </div>
         </div>
+          </td>
+        </tr>
       ) : null}
-    </li>
+    </>
   );
 }
 
@@ -151,6 +180,8 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
   const [search, setSearch] = useState(initial.q ?? "");
   const [query, setQuery] = useState<ScreeningQuery>({ sort: "newest", ...initial, page: 1, per_page: PER_PAGE });
   const [loaded, setLoaded] = useState<{ key: string; data?: ScreeningPage; error?: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   const key = JSON.stringify(query);
   const loading = loaded?.key !== key;
@@ -174,6 +205,25 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
   }, [key, query]);
 
   const update = (patch: Partial<ScreeningQuery>) => setQuery((current) => ({ ...current, ...patch, page: 1 }));
+
+  const exportTable = async () => {
+    setExporting(true);
+    setExportError("");
+    try {
+      const first = await listScreenings({ ...query, page: 1, per_page: 100 });
+      const items = [...first.items];
+      for (let page = 2; page <= first.pages; page += 1) {
+        const next = await listScreenings({ ...query, page, per_page: 100 });
+        items.push(...next.items);
+      }
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadCsv(`viscan-screenings-${stamp}.csv`, screeningsCsv(items));
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Could not export this table.");
+    } finally {
+      setExporting(false);
+    }
+  };
   const summary = data?.summary;
   const filtered =
     Boolean(query.q || query.verdict || query.status || query.from || query.to || query.referred || query.overdue);
@@ -184,7 +234,9 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
       <header className="page-head">
         <p className="brand-support">Records</p>
         <h1>Past screenings</h1>
-        <p className="hero-lede">Every AI reading, what the clinician confirmed, and what happened next.</p>
+        <p className="hero-lede">
+          Every AI reading in one table. Filter it, export a spreadsheet, or open a single report.
+        </p>
       </header>
 
       {summary ? (
@@ -288,9 +340,23 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
       ) : null}
 
       <section aria-labelledby="history-title" aria-busy={loading}>
-        <h2 id="history-title" className="block-title">
-          {data ? `${data.total} screening${data.total === 1 ? "" : "s"}${filtered ? " match" : ""}` : "Loading screenings…"}
-        </h2>
+        <div className="table-toolbar">
+          <h2 id="history-title" className="block-title">
+            {loading
+              ? "Loading screenings…"
+              : data
+                ? `${data.total} screening${data.total === 1 ? "" : "s"}${filtered ? " match" : ""}`
+                : "Screenings unavailable"}
+          </h2>
+          <button type="button" className="secondary" onClick={exportTable} disabled={exporting || !data?.total}>
+            {exporting ? "Preparing export…" : "Export CSV"}
+          </button>
+        </div>
+        {exportError ? (
+          <p className="error" role="alert">
+            {exportError}
+          </p>
+        ) : null}
         {data && !data.items.length && !loading ? (
           <div className="history-empty">
             {filtered ? (
@@ -302,9 +368,29 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
             )}
           </div>
         ) : null}
-        <ol className={loading && data ? "history-list stale" : "history-list"}>
-          {data?.items.map((row) => <ScreeningItem key={row.interpretation_id} row={row} />)}
-        </ol>
+        {data?.items.length ? (
+          <div className={loading ? "table-wrap stale" : "table-wrap"}>
+            <table className="data-table screenings-table">
+              <thead>
+                <tr>
+                  <th scope="col">Patient</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">AI reading</th>
+                  <th scope="col">Review</th>
+                  <th scope="col">Final result</th>
+                  <th scope="col">Risk</th>
+                  <th scope="col">Follow-up</th>
+                  <th scope="col">Report</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((row) => (
+                  <ScreeningItem key={row.interpretation_id} row={row} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
         {data && data.pages > 1 ? (
           <nav className="pager" aria-label="Pages">
             <button type="button" disabled={data.page <= 1} onClick={() => setQuery((q) => ({ ...q, page: data.page - 1 }))}>

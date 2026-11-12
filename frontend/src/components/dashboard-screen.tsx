@@ -62,22 +62,21 @@ function when(iso: string | null) {
 
 function MiniRow({ row, panel }: { row: ScreeningRow; panel: string }) {
   const tone = verdictTone(row.screening_verdict);
+  const who = row.patient_name || row.patient_external_id || `Reading #${row.interpretation_id}`;
   return (
-    <li>
-      <Link href={`/screenings?q=%23${row.interpretation_id}`} className="mini-row">
-        <span className={`case-dot ${tone}`} aria-hidden="true" />
-        <span className="mini-main">
-          <strong>{row.patient_name || row.patient_external_id || `Reading #${row.interpretation_id}`}</strong>
-          <small>
-            {verdictLabel(row.screening_verdict)} · {humanize(row.final_via_result)}
-            {row.risk_score != null ? ` · risk ${row.risk_score}` : ""}
-          </small>
-        </span>
-        <small className="mini-when">
-          {panel === "overdue" && row.follow_up_due ? `Due ${row.follow_up_due}` : when(row.created_at)}
-        </small>
-      </Link>
-    </li>
+    <tr>
+      <td>
+        <Link href={`/screenings?q=%23${row.interpretation_id}`} className="table-person">
+          <span className={`case-dot ${tone}`} aria-hidden="true" />
+          <strong>{who}</strong>
+        </Link>
+      </td>
+      <td>
+        {verdictLabel(row.screening_verdict)} · {humanize(row.final_via_result)}
+        {row.risk_score != null ? ` · risk ${row.risk_score}` : ""}
+      </td>
+      <td>{panel === "overdue" && row.follow_up_due ? `Due ${row.follow_up_due}` : when(row.created_at)}</td>
+    </tr>
   );
 }
 
@@ -110,11 +109,22 @@ function ScreeningPanel({ panel }: { panel: (typeof PANELS)[number] }) {
       {data && !data.items.length ? <p className="quiet small">{panel.empty}</p> : null}
       {!data && !error ? <p className="quiet small">Loading…</p> : null}
       {data?.items.length ? (
-        <ul className="mini-list">
-          {data.items.map((row) => (
-            <MiniRow key={row.interpretation_id} row={row} panel={panel.id} />
-          ))}
-        </ul>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Patient</th>
+                <th scope="col">Reading</th>
+                <th scope="col">{panel.id === "overdue" ? "Due" : "When"}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((row) => (
+                <MiniRow key={row.interpretation_id} row={row} panel={panel.id} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
     </section>
   );
