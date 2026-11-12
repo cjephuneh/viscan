@@ -43,7 +43,7 @@ export function ClinicNav() {
             })}
           </ul>
         </nav>
-        <Link href="/patient" className="clinic-checkin" aria-label="Open patient check-in">
+        <Link href="/patient" className="clinic-checkin" aria-label="Patient check-in">
           Patient check-in
         </Link>
       </div>

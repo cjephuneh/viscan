@@ -329,19 +329,22 @@ export function WelcomeScreen() {
     <div className="welcome">
       <div className="welcome-glow" aria-hidden="true" />
       <header className="welcome-top">
-        <div className="welcome-brand">
-          <span className="brand-logo" aria-hidden="true">
-            <ViscanMark size="lg" />
-          </span>
-          <span className="welcome-brand-meta">
-            <small>Patient check-in</small>
-          </span>
+        <div className="welcome-top-inner">
+          <div className="welcome-brand">
+            <span className="brand-logo" aria-hidden="true">
+              <ViscanMark size="lg" />
+            </span>
+            <span className="welcome-brand-meta">
+              <small>Patient check-in</small>
+            </span>
+          </div>
+          <Link href="/dashboard" className="staff-link">
+            Clinic workspace
+          </Link>
         </div>
-        <Link href="/dashboard" className="staff-link">
-          Clinic workspace
-        </Link>
       </header>
 
+      <div className="welcome-body">
       {mode === "intro" ? (
         <main className="welcome-intro">
           <div className="intro-copy">
@@ -544,11 +547,15 @@ export function WelcomeScreen() {
         </main>
       ) : null}
 
+      </div>
+
       <footer className="welcome-foot">
-        <p>
-          {personaName} is an AI assistant and does not give diagnoses. If you are in pain or bleeding heavily, tell the
-          front desk right away.
-        </p>
+        <div className="welcome-foot-inner">
+          <p>
+            {personaName} is an AI assistant and does not give diagnoses. If you are in pain or bleeding heavily, tell
+            the front desk right away.
+          </p>
+        </div>
       </footer>
     </div>
   );
