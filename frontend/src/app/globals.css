@@ -3988,11 +3988,17 @@ button:disabled {
 
 .history-filters {
   display: grid;
-  gap: 12px;
-  padding: 16px;
+  gap: 14px;
+  padding: 18px;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--line);
-  background: var(--paper);
+  border: 1px solid rgba(47, 111, 237, 0.12);
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f7fafd 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.history-search {
+  max-width: 420px;
 }
 
 .history-chips {
@@ -4002,52 +4008,191 @@ button:disabled {
 }
 
 .filter-chip {
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink);
+  min-height: 36px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(21, 42, 53, 0.12);
+  background: #ffffff;
+  color: #1a2f4a;
   font-size: 0.9rem;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.filter-chip:hover {
+  border-color: rgba(47, 111, 237, 0.35);
+  background: var(--accent-soft);
+  color: var(--accent-mid);
 }
 
 .filter-chip.on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: rgba(47, 111, 237, 0.45);
+  background: #dce8fc;
   color: var(--accent-mid);
-  font-weight: 600;
 }
 
 .history-selects {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 12px;
+  gap: 12px 14px;
+}
+
+.history-selects .field {
+  min-width: 0;
+}
+
+.history-selects .field > span {
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #5d7380;
 }
 
 .history-selects .field select,
-.history-selects .field input {
-  border: 1px solid var(--line);
-  background: var(--paper);
+.history-selects .field input[type="date"] {
+  min-height: 42px;
+  min-width: 148px;
+  border: 1px solid rgba(21, 42, 53, 0.12);
+  background: #ffffff;
   color: var(--ink);
-  border-radius: 10px;
-  padding: 8px 10px;
+  border-radius: 8px;
+  padding: 8px 12px;
   font: inherit;
+  font-size: 0.92rem;
+  font-weight: 550;
+  line-height: 1.2;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.history-selects .field select:hover,
+.history-selects .field input[type="date"]:hover {
+  border-color: rgba(47, 111, 237, 0.35);
+}
+
+.history-selects .field select:focus-visible,
+.history-selects .field input[type="date"]:focus-visible {
+  border-color: var(--accent);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.14);
+  outline: none;
+}
+
+.history-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(47, 111, 237, 0.16);
+  background: color-mix(in srgb, var(--accent-soft) 62%, #ffffff);
+}
+
+.history-dates .field {
+  flex: 1 1 150px;
+  gap: 5px;
+}
+
+.history-dates .field input[type="date"] {
+  width: 100%;
+  min-width: 0;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color-scheme: light;
+}
+
+.history-dates .field input[type="date"]:not(:focus)::placeholder,
+.history-dates .field input[type="date"]:invalid {
+  color: rgba(93, 115, 128, 0.72);
+}
+
+.history-dates .field input[type="date"]::-webkit-calendar-picker-indicator {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  opacity: 0.78;
+  margin-left: 6px;
+  padding: 3px;
+  border-radius: 6px;
+  filter: invert(34%) sepia(78%) saturate(1450%) hue-rotate(202deg) brightness(95%) contrast(92%);
+}
+
+.history-dates .field input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background: rgba(47, 111, 237, 0.12);
+}
+
+.history-dates-sep {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  margin-bottom: 0;
+  padding: 0 2px;
+  color: #5d7380;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.history-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-height: 42px;
 }
 
 .toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding-bottom: 8px;
-  font-size: 0.92rem;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(21, 42, 53, 0.1);
+  background: #ffffff;
+  color: #1a2f4a;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.toggle:hover {
+  border-color: rgba(47, 111, 237, 0.35);
+  background: var(--accent-soft);
+}
+
+.toggle:has(input:checked) {
+  border-color: rgba(47, 111, 237, 0.4);
+  background: #dce8fc;
+  color: var(--accent-mid);
+}
+
+.toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .text-button {
   border: 0;
   background: none;
+  color: var(--accent-mid);
+  font-weight: 650;
+  font-size: 0.9rem;
+  padding: 8px 4px;
+  min-height: 42px;
+  cursor: pointer;
+}
+
+.text-button:hover {
   color: var(--accent);
-  font-weight: 600;
-  padding: 0 0 8px;
+  text-decoration: underline;
 }
 
 .history-list {
@@ -5435,9 +5580,7 @@ button:disabled {
 }
 
 .field input,
-.field select,
-.history-selects .field select,
-.history-selects .field input {
+.field select {
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--paper) 94%, #eef7f8);
   transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.2s var(--ease);
@@ -5446,6 +5589,11 @@ button:disabled {
 .field input:focus-visible,
 .field select:focus-visible {
   background: var(--paper);
+}
+
+.history-selects .field select,
+.history-selects .field input[type="date"] {
+  background: #ffffff;
 }
 
 .dropzone {
@@ -5585,8 +5733,20 @@ html.is-scrolled .clinic-footer {
 
   .history-selects .field,
   .history-selects .field select,
-  .history-selects .field input {
+  .history-selects .field input,
+  .history-dates,
+  .history-toggles {
     width: 100%;
+  }
+
+  .history-dates {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .history-dates-sep {
+    display: none;
   }
 
   .send-head,
