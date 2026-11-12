@@ -38,6 +38,18 @@ pytest -q
 
 `INTERPRETER_MODE=auto` uses `models/base` when those weights are present. After `scripts/finetune_via.py` writes `models/viscan-via-adapter`, that adapter is loaded on top of the base weights. With no weights on disk the colour heuristic is the fallback.
 
+## Use a hosted vision model
+
+`INTERPRETER_MODE=hosted` sends the exam image to `VISION_MODEL` (default `gpt-4o`) and stores the same VIA JSON. Copy `.env.example` to `.env`, set the key, and restart:
+
+```bash
+INTERPRETER_MODE=hosted
+VISION_API_KEY=the-key
+VISION_MODEL=gpt-4o
+```
+
+A clinician still confirms every result.
+
 ## Run the model on another machine
 
 The API asks an interpreter for a VIA JSON result. It does not contain Colab, Kaggle, or GPU code. `INTERPRETER_MODE=remote` sends the image to whatever URL is serving `scripts/model_server.py`.

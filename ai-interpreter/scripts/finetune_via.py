@@ -27,25 +27,42 @@ sys.path.insert(0, str(ROOT))
 
 from app.services.interpreter import build_messages  # noqa: E402
 
-DATA_DIR = Path(os.environ.get("VISCAN_DATA_DIR", ROOT / "data" / "malhari"))
-MANIFEST = DATA_DIR / "manifest.csv"
 CIN2_PLUS = {"CIN2", "CIN3"}
+TZ_TYPES = {"TZ1": "type_1", "TZ2": "type_2", "TZ3": "type_3"}
+
+
+def _dataset() -> tuple[Path, Path]:
+    """Image root and manifest. A mounted Kaggle dataset wins.
+
+    Otherwise use data/training/manifest.csv when extra public sets have been
+    prepared, and fall back to the Malhari folder.
+    """
+    override = os.environ.get("VISCAN_DATA_DIR")
+    if override:
+        root = Path(override)
+        return root, root / "manifest.csv"
+    combined = ROOT / "data" / "training" / "manifest.csv"
+    if combined.is_file():
+        return ROOT / "data", combined
+    root = ROOT / "data" / "malhari"
+    return root, root / "manifest.csv"
 
 
 def _rows(include_pap: bool) -> list[dict]:
-    if not MANIFEST.is_file():
+    data_dir, manifest = _dataset()
+    if not manifest.is_file():
         sys.exit(
-            "No Malhari manifest at "
-            f"{MANIFEST}. Download it with `python scripts/malhari.py download` "
-            "or set VISCAN_DATA_DIR to the mounted dataset. "
+            "No training manifest at "
+            f"{manifest}. Download Malhari with `python scripts/malhari.py download`, "
+            "or build the combined manifest with `python scripts/prepare_training_data.py`. "
             "This repository does not contain the training images."
         )
-    with MANIFEST.open() as handle:
+    with manifest.open() as handle:
         rows = list(csv.DictReader(handle))
-    rows = [row for row in rows if include_pap or row["modality"] == "colposcopic"]
-    present = [row for row in rows if (DATA_DIR / row["path"]).is_file()]
+    rows = [row for row in rows if include_pap or row["modality"] != "pap"]
+    present = [row for row in rows if (data_dir / row["path"]).is_file()]
     if not present:
-        sys.exit(f"Manifest lists {len(rows)} images but none are on disk under {DATA_DIR}.")
+        sys.exit(f"Manifest lists {len(rows)} images but none are on disk under {data_dir}.")
     return present
 
 # Text-only Llama cannot read a cervix photo. The vision checkpoint is the one
@@ -60,7 +77,41 @@ def supervision(row: dict) -> dict:
     so the target carries the grade and leaves lesion geometry empty.
     """
     label, modality = row["label"], row["modality"]
-    if modality == "pap":
+    note = (row.get("notes") or "").strip()
+    if label in TZ_TYPES:
+        via, image_modality, density = "VIA_NEGATIVE", "acetic_acid", "none"
+        histo = {"normal_or_benign": 0.7, "cin1": 0.15, "cin2_plus": 0.1, "invasive_cancer": 0.05}
+        rationale = (
+            f"Transformation zone {TZ_TYPES[label].replace('_', ' ')}. "
+            "The source did not publish an acetowhite grade."
+        )
+        if note:
+            rationale = f"{rationale} Clinician findings: {note}."
+    elif label == "ACETO_POSITIVE":
+        via, image_modality, density = "VIA_POSITIVE", "acetic_acid", "moderate"
+        histo = {"normal_or_benign": 0.1, "cin1": 0.45, "cin2_plus": 0.4, "invasive_cancer": 0.05}
+        rationale = "Expert marked acetowhite epithelium on this acetic-acid photo."
+        if note:
+            rationale = f"{rationale} {note}"
+    elif label == "ACETO_NEGATIVE":
+        via, image_modality, density = "VIA_NEGATIVE", "acetic_acid", "none"
+        histo = {"normal_or_benign": 0.75, "cin1": 0.15, "cin2_plus": 0.08, "invasive_cancer": 0.02}
+        rationale = "Expert found no acetowhite area on this acetic-acid photo."
+        if note:
+            rationale = f"{rationale} {note}"
+    elif label == "IODINE":
+        via, image_modality, density = "INADEQUATE", "lugol_iodine", "none"
+        histo = {"normal_or_benign": 0.25, "cin1": 0.25, "cin2_plus": 0.25, "invasive_cancer": 0.25}
+        rationale = "Lugol iodine frame, not a white-light acetic-acid photo."
+    elif label == "GREEN":
+        via, image_modality, density = "INADEQUATE", "green_filter", "none"
+        histo = {"normal_or_benign": 0.25, "cin1": 0.25, "cin2_plus": 0.25, "invasive_cancer": 0.25}
+        rationale = "Green-filter frame, not a white-light acetic-acid photo."
+    elif label == "NOT_CERVIX":
+        via, image_modality, density = "INADEQUATE", "not_cervix", "none"
+        histo = {"normal_or_benign": 0.25, "cin1": 0.25, "cin2_plus": 0.25, "invasive_cancer": 0.25}
+        rationale = "This photograph is not a cervix."
+    elif modality == "pap":
         via, image_modality, density = "INADEQUATE", "cytology_microscopy", "none"
         histo = {"normal_or_benign": 0.25, "cin1": 0.25, "cin2_plus": 0.25, "invasive_cancer": 0.25}
         rationale = "Microscopy slide, not a white-light acetic-acid photo."
@@ -77,21 +128,32 @@ def supervision(row: dict) -> dict:
         histo = {"normal_or_benign": 0.25, "cin1": 0.25, "cin2_plus": 0.25, "invasive_cancer": 0.25}
         rationale = f"Unmapped dataset label {label}."
     positive = via == "VIA_POSITIVE"
+    graded = via in {"VIA_NEGATIVE", "VIA_POSITIVE", "SUSPICIOUS_FOR_CANCER"}
+    if label in TZ_TYPES:
+        confidence = 0.45
+    elif graded and label != "NOT_CERVIX":
+        confidence = 0.7
+    else:
+        confidence = 0.9
+    other = [f"dataset label {label}"]
+    if note:
+        other.append(note)
     return {
         "image_modality": image_modality,
         "via_result": via,
-        "confidence": 0.7 if positive else 0.9,
-        "image_adequacy": {"adequate": positive, "issues": [] if positive else ["not a VIA frame"]},
-        "scj_visibility": "partially_visible",
-        "transformation_zone_type": "undetermined",
+        "confidence": confidence,
+        "image_adequacy": {"adequate": graded, "issues": [] if graded else ["not a VIA frame"]},
+        "scj_visibility": "fully_visible" if label == "TZ1" else (
+            "not_visible" if label == "TZ3" else "partially_visible"),
+        "transformation_zone_type": TZ_TYPES.get(label, "undetermined"),
         "findings": {
             "acetowhite_present": positive,
             "acetowhite_density": density,
-            "lesion_margins": "sharp" if label in CIN2_PLUS else "none",
+            "lesion_margins": "sharp" if (label in CIN2_PLUS or label == "ACETO_POSITIVE") else "none",
             "lesion_clock_positions": [],
             "cervix_area_involved_percent": 0,
             "extends_into_canal": False,
-            "other_findings": [f"dataset label {label}"],
+            "other_findings": other,
         },
         "lesions": [],
         "histology_likelihood": histo,
@@ -104,7 +166,8 @@ def supervision(row: dict) -> dict:
 
 
 def _conversation(row: dict) -> list[dict]:
-    messages = build_messages({}, [], None, (DATA_DIR / row["path"]).read_bytes())
+    data_dir, _manifest = _dataset()
+    messages = build_messages({}, [], None, (data_dir / row["path"]).read_bytes())
     messages.append({
         "role": "assistant",
         "content": [{"type": "text", "text": json.dumps(supervision(row), separators=(",", ":"))}],
@@ -131,7 +194,8 @@ def train(base_model: str, output: Path, max_steps: int, rows: list[dict], lr: f
     except ImportError:
         from transformers import AutoModelForVision2Seq as AutoModel
 
-    print(f"Loading {base_model} for {max_steps} LoRA steps ...")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Loading {base_model} for {max_steps} LoRA steps on {device} ...")
     processor = AutoProcessor.from_pretrained(base_model)
     try:
         net = AutoModel.from_pretrained(base_model, dtype=torch.float32, low_cpu_mem_usage=True)
@@ -141,7 +205,7 @@ def train(base_model: str, output: Path, max_steps: int, rows: list[dict], lr: f
         r=8, lora_alpha=16, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM",
         target_modules=["q_proj", "v_proj"],
     ))
-    net.train()
+    net.to(device).train()
     optim = AdamW((p for p in net.parameters() if p.requires_grad), lr=lr)
 
     for step in range(1, max_steps + 1):
@@ -149,6 +213,7 @@ def train(base_model: str, output: Path, max_steps: int, rows: list[dict], lr: f
         inputs = processor.apply_chat_template(
             messages, add_generation_prompt=False, tokenize=True, return_dict=True, return_tensors="pt",
         )
+        inputs = {key: value.to(device) if torch.is_tensor(value) else value for key, value in dict(inputs).items()}
         labels = inputs["input_ids"].clone()
         prompt_len = min(_prompt_length(processor, messages), labels.shape[-1] - 1)
         labels[:, :prompt_len] = -100
@@ -156,7 +221,8 @@ def train(base_model: str, output: Path, max_steps: int, rows: list[dict], lr: f
         loss = net(**inputs, labels=labels).loss
         loss.backward()
         optim.step()
-        print(f"  step {step}/{max_steps}  loss {loss.item():.4f}")
+        if step == 1 or step % 10 == 0 or step == max_steps:
+            print(f"  step {step}/{max_steps}  loss {loss.item():.4f}", flush=True)
 
     output.mkdir(parents=True, exist_ok=True)
     net.save_pretrained(output)

@@ -824,7 +824,11 @@ Tables are created automatically on startup.
 
 | Variable | Default | Description |
 |---|---|---|
-| `INTERPRETER_MODE` | `auto` | `auto`, `local`, `remote`, `heuristic` |
+| `INTERPRETER_MODE` | `auto` | `auto`, `local`, `remote`, `hosted`, `heuristic` |
+| `VISION_API_KEY` | – | Key for `INTERPRETER_MODE=hosted` |
+| `VISION_MODEL` | `gpt-4o` | Hosted vision model id |
+| `VISION_API_URL` | chat completions URL | Endpoint used when `INTERPRETER_MODE=hosted` |
+| `VISION_API_TIMEOUT_SECONDS` | `90` | How long a hosted request waits |
 | `REMOTE_MODEL_URL` | – | URL of `scripts/model_server.py` on any GPU runtime |
 | `REMOTE_MODEL_TOKEN` | – | Bearer token that server was started with |
 | `REMOTE_MODEL_TIMEOUT_SECONDS` | `300` | How long a request waits for that server |

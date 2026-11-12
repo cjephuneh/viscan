@@ -56,6 +56,13 @@ class Config:
         "REMOTE_MODEL_TIMEOUT_SECONDS", os.getenv("COLAB_TIMEOUT_SECONDS", "300"),
     ))
     INTERPRETER_MODE = os.getenv("INTERPRETER_MODE", "auto")
+    # Hosted vision API. The screening flow only sees the VIA JSON.
+    VISION_API_KEY = os.getenv("VISION_API_KEY", os.getenv("OPENAI_API_KEY", "")).strip()
+    VISION_MODEL = os.getenv("VISION_MODEL", "gpt-4o").strip() or "gpt-4o"
+    VISION_API_URL = os.getenv(
+        "VISION_API_URL", "https://api.openai.com/v1/chat/completions",
+    ).strip()
+    VISION_API_TIMEOUT_SECONDS = int(os.getenv("VISION_API_TIMEOUT_SECONDS", "90"))
     FEWSHOT_EXAMPLES = int(os.getenv("FEWSHOT_EXAMPLES", "2"))
     REVIEW_CONFIDENCE_THRESHOLD = float(os.getenv("REVIEW_CONFIDENCE_THRESHOLD", "0.75"))
 

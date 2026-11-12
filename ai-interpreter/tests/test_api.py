@@ -782,6 +782,83 @@ def test_auto_mode_selects_local_weights_and_adapter(tmp_path):
     assert resolve_engine({"INTERPRETER_MODE": "auto", "LOCAL_MODEL_DIR": str(tmp_path / "empty")})[0] == "heuristic"
 
 
+def test_hosted_mode_stores_the_reading(client, monkeypatch):
+    captured = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            body = json.dumps({"choices": [{"message": {"content": json.dumps(model_result())}}]})
+            return body.encode()
+
+    def fake_open(request, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode())
+        captured["auth"] = request.get_header("Authorization")
+        captured["timeout"] = timeout
+        return FakeResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_open)
+    client.application.config.update(
+        INTERPRETER_MODE="hosted",
+        VISION_API_KEY="secret",
+        VISION_MODEL="gpt-4o",
+        VISION_API_URL="https://api.openai.com/v1/chat/completions",
+        VISION_API_TIMEOUT_SECONDS=12,
+    )
+    res = upload(client, cervix_image(True), patient_external_id="HOST1", age="36")
+    assert res.status_code == 201, res.json
+    assert res.json["engine"]["name"] == "hosted"
+    assert res.json["engine"]["model"] == "gpt-4o"
+    assert res.json["diagnosis"]["via_result"] == "VIA_POSITIVE"
+    assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["auth"] == "Bearer secret"
+    assert captured["timeout"] == 12
+    assert captured["body"]["model"] == "gpt-4o"
+    assert captured["body"]["response_format"]["type"] == "json_schema"
+    assert "age 36" in json.dumps(captured["body"]["messages"])
+
+
+def test_hosted_mode_requires_a_key():
+    from app.services.interpreter import build_interpreter
+
+    try:
+        build_interpreter({"INTERPRETER_MODE": "hosted", "VISION_API_KEY": ""})
+    except RuntimeError as exc:
+        assert "VISION_API_KEY" in str(exc)
+    else:
+        raise AssertionError("hosted mode must refuse an empty key")
+
+
+def test_hosted_mode_marks_a_non_via_image_inadequate(monkeypatch):
+    from app.services.interpreter import HostedVisionInterpreter
+
+    reading = model_result()
+    reading["image_modality"] = "not_cervix"
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": json.dumps(reading)}}]}).encode()
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: FakeResp())
+    result = HostedVisionInterpreter("secret", url="https://example.test/v1").interpret(
+        cervix_image(False), {}, [],
+    )
+    assert result["via_result"] == "INADEQUATE"
+    assert result["image_adequacy"]["adequate"] is False
+
+
 def test_remote_mode_stores_the_reading_from_any_runtime(client, monkeypatch):
     captured = {}
 

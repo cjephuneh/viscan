@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import os
@@ -253,9 +254,13 @@ def resolve_engine(config) -> tuple[str, str | None]:
     ready = weights_ready(config.get("LOCAL_MODEL_DIR"))
     if mode == "local" or (mode == "auto" and ready):
         return ("local", running_model_name(config)) if ready else ("local", None)
+    if mode == "hosted":
+        return "hosted", (config.get("VISION_MODEL") or "gpt-4o").strip() or "gpt-4o"
     if mode in ("auto", "heuristic"):
         return "heuristic", HeuristicInterpreter.model
-    raise RuntimeError(f"Unknown INTERPRETER_MODE={mode!r}. Use auto, local, remote, or heuristic.")
+    raise RuntimeError(
+        f"Unknown INTERPRETER_MODE={mode!r}. Use auto, local, remote, hosted, or heuristic."
+    )
 
 
 def build_messages(context: dict, examples: list[ReferenceExample],
@@ -360,6 +365,17 @@ def _coerce(result: dict) -> dict:
     return _normalise(result)
 
 
+def _guard_modality(result: dict) -> dict:
+    if result["image_modality"] in NON_VIA_MODALITIES and result["via_result"] != "INADEQUATE":
+        result["image_adequacy"]["issues"].append(
+            f"Image appears to be {result['image_modality'].replace('_', ' ')}, not a white-light "
+            f"acetic-acid photo (model had suggested {result['via_result']})."
+        )
+        result["via_result"] = "INADEQUATE"
+        result["image_adequacy"]["adequate"] = False
+    return result
+
+
 class LocalVisionInterpreter:
     """On-device vision model. Loads the base weights once, plus a LoRA adapter when one has been trained."""
 
@@ -444,15 +460,7 @@ class LocalVisionInterpreter:
     def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
                   before_bytes: bytes | None = None) -> dict:
         text = self.generate(build_messages(context, examples, before_bytes, image_bytes))
-        result = _coerce(_parse_json(text))
-        if result["image_modality"] in NON_VIA_MODALITIES and result["via_result"] != "INADEQUATE":
-            result["image_adequacy"]["issues"].append(
-                f"Image appears to be {result['image_modality'].replace('_', ' ')}, not a white-light "
-                f"acetic-acid photo (model had suggested {result['via_result']})."
-            )
-            result["via_result"] = "INADEQUATE"
-            result["image_adequacy"]["adequate"] = False
-        return result
+        return _guard_modality(_coerce(_parse_json(text)))
 
 
 def _context_text(context: dict) -> str:
@@ -637,6 +645,107 @@ class RemoteInterpreter:
         return result
 
 
+def _jpeg_data_url(image_bytes: bytes, max_side: int = 1024) -> str:
+    img = _open_image(image_bytes, max_side)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _hosted_messages(context: dict, examples: list[ReferenceExample],
+                     before_bytes: bytes | None, image_bytes: bytes) -> list[dict]:
+    content: list[dict] = [{"type": "text", "text": _context_text(context)}]
+    if examples:
+        content.append({
+            "type": "text",
+            "text": "Reference cases verified by clinicians at this programme "
+                    "(use them to calibrate to local camera and lighting conditions):",
+        })
+        for ex in examples:
+            label = f"Reference case - clinician result: {ex.via_result}."
+            if ex.notes:
+                label += f" Notes: {ex.notes}"
+            content.append({"type": "text", "text": label})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": _jpeg_data_url(ex.image_bytes, 512)},
+            })
+    if before_bytes:
+        content.append({
+            "type": "text",
+            "text": "Baseline: native (pre-acetic-acid) view of the same cervix, taken before acetic acid "
+                    "was applied. Use it only to judge what changed after acetic acid.",
+        })
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": _jpeg_data_url(before_bytes, 768)},
+        })
+    content.append({
+        "type": "text",
+        "text": "Exam image: cervix about 1 minute after 3-5% acetic acid. Return the VIA JSON.",
+    })
+    content.append({"type": "image_url", "image_url": {"url": _jpeg_data_url(image_bytes)}})
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": content},
+    ]
+
+
+class HostedVisionInterpreter:
+    """Sends the VIA image to a hosted vision model and stores the same VIA JSON."""
+
+    engine = "hosted"
+    uses_references = True
+    model = "gpt-4o"
+
+    def __init__(self, api_key: str, model: str = "gpt-4o",
+                 url: str = "https://api.openai.com/v1/chat/completions", timeout: int = 90):
+        self.api_key = api_key
+        self.model = model or "gpt-4o"
+        self.url = url
+        self.timeout = timeout
+
+    def interpret(self, image_bytes: bytes, context: dict, examples: list[ReferenceExample],
+                  before_bytes: bytes | None = None) -> dict:
+        import urllib.error
+        import urllib.request
+
+        body = json.dumps({
+            "model": self.model,
+            "temperature": 0,
+            "max_tokens": 2000,
+            "messages": _hosted_messages(context, examples, before_bytes, image_bytes),
+            "response_format": {"type": "json_schema", "json_schema": VIA_SCHEMA},
+        }).encode()
+        request = urllib.request.Request(
+            self.url,
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")[:400]
+            raise RuntimeError(f"Hosted model returned {exc.code}: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Cannot reach the hosted vision API at {self.url}.") from exc
+        try:
+            payload = json.loads(raw)
+            message = payload["choices"][0]["message"]
+            text = message.get("content") or ""
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Hosted model returned an unexpected body: {raw[:200]!r}") from exc
+        if not text:
+            raise RuntimeError(f"Hosted model declined the image: {message.get('refusal') or 'empty response'}")
+        return _guard_modality(_coerce(_parse_json(text)))
+
+
 def _multipart(fields: dict[str, str], files: list[tuple[str, str, bytes]]) -> tuple[bytes, str]:
     boundary = "viscan" + os.urandom(8).hex()
     chunks: list[bytes] = []
@@ -656,6 +765,19 @@ def _multipart(fields: dict[str, str], files: list[tuple[str, str, bytes]]) -> t
 
 def build_interpreter(config) -> ViaInterpreter:
     engine, name = resolve_engine(config)
+    if engine == "hosted":
+        key = (config.get("VISION_API_KEY") or config.get("OPENAI_API_KEY") or "").strip()
+        if not key:
+            raise RuntimeError(
+                "INTERPRETER_MODE=hosted but VISION_API_KEY is empty. "
+                "Put the key in ai-interpreter/.env and restart."
+            )
+        return HostedVisionInterpreter(
+            key,
+            name or "gpt-4o",
+            (config.get("VISION_API_URL") or "https://api.openai.com/v1/chat/completions").strip(),
+            int(config.get("VISION_API_TIMEOUT_SECONDS") or 90),
+        )
     if engine == "remote":
         url = (config.get("REMOTE_MODEL_URL") or config.get("COLAB_MODEL_URL") or "").strip()
         if not url:
