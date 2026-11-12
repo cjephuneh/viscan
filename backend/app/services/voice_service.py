@@ -6,6 +6,7 @@ import httpx
 from flask import current_app
 
 from app.errors import APIError
+from app.services.http_client import shared_client
 
 
 def synthesize(text: str, language: str | None = None) -> dict[str, Any]:
@@ -26,12 +27,12 @@ def synthesize(text: str, language: str | None = None) -> dict[str, Any]:
         body["language"] = language
 
     try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.post(
-                api_url.rstrip("/") + "/synthesize",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=body,
-            )
+        response = shared_client().post(
+            api_url.rstrip("/") + "/synthesize",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=body,
+            timeout=timeout,
+        )
     except httpx.RequestError as exc:
         raise APIError("Voice provider is unavailable.", 503) from exc
 

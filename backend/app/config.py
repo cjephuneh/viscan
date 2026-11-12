@@ -98,10 +98,16 @@ class BaseConfig:
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = build_database_url()
+    # The analysis pool releases its connection while the AI call is in flight,
+    # then needs one again to store the result. Size the pool for that burst
+    # without exceeding Postgres' default connection limit.
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
-        "connect_args": {"connect_timeout": 2},
-        "pool_timeout": 2,
+        "pool_size": 20,
+        "max_overflow": 50,
+        "pool_timeout": 30,
+        "pool_recycle": 280,
+        "connect_args": {"connect_timeout": 5},
     }
 
 

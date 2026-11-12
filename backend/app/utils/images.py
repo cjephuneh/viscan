@@ -45,8 +45,7 @@ def validate_and_store_image(file: FileStorage, screening_id: int) -> tuple[str,
 
     try:
         with Image.open(io.BytesIO(raw)) as image:
-            image.verify()
-        with Image.open(io.BytesIO(raw)) as image:
+            image.load()
             fmt = (image.format or "").upper()
             if fmt not in ALLOWED_FORMATS:
                 raise APIError("Unsupported image format. Use JPEG, PNG, or WEBP.", 400)

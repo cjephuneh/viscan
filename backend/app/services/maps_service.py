@@ -7,6 +7,7 @@ import httpx
 from flask import current_app
 
 from app.errors import APIError
+from app.services.http_client import shared_client
 from app.models import Facility
 
 
@@ -83,16 +84,16 @@ def _provider_nearby(
 ) -> list[dict[str, Any]]:
     timeout = current_app.config["EXTERNAL_TIMEOUT_SECONDS"]
     try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.get(
-                provider_url.rstrip("/") + "/nearby",
-                params={
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "radius_km": radius_km,
-                    "api_key": api_key,
-                },
-            )
+        response = shared_client().get(
+            provider_url.rstrip("/") + "/nearby",
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius_km": radius_km,
+                "api_key": api_key,
+            },
+            timeout=timeout,
+        )
     except httpx.RequestError as exc:
         raise APIError("Maps provider is unavailable.", 503) from exc
 

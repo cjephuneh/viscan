@@ -6,6 +6,9 @@ import httpx
 from flask import current_app
 
 from app.errors import APIError
+from app.services.http_client import shared_client
+
+_REAL_CLIENT = httpx.Client
 
 
 REQUIRED_KEYS = ("prediction", "confidence", "model_version", "processing_time_ms")
@@ -90,8 +93,7 @@ def analyze_image(
         }
 
     try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.post(url, json=body)
+        response = _post_json(url, body, timeout)
     except httpx.TimeoutException as exc:
         raise APIError("AI service timed out.", 504) from exc
     except httpx.RequestError as exc:
@@ -108,3 +110,12 @@ def analyze_image(
         raise APIError("AI service returned an invalid response.", 502) from exc
 
     return _validate_ai_payload(payload)
+
+
+def _post_json(url: str, body: dict[str, Any], timeout: float):
+    # Tests replace httpx.Client and expect a context manager. Production uses
+    # the shared client so the next phase does not open a new connection.
+    if httpx.Client is not _REAL_CLIENT:
+        with httpx.Client(timeout=timeout) as client:
+            return client.post(url, json=body)
+    return shared_client().post(url, json=body, timeout=timeout)

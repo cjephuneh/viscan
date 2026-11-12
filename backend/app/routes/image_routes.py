@@ -74,4 +74,10 @@ class ImageFile(MethodView):
     def get(self, image_id):
         image = _get_image_or_404(image_id)
         path = resolve_image_path(image.file_path)
-        return send_file(path, mimetype=image.media_type, as_attachment=False)
+        return send_file(
+            path,
+            mimetype=image.media_type,
+            as_attachment=False,
+            conditional=True,
+            max_age=86400,
+        )

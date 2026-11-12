@@ -13,6 +13,7 @@ from datetime import timezone
 from flask import current_app
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
 from app.errors import APIError
 from app.extensions import db
@@ -82,27 +83,42 @@ def process_next() -> bool:
     claimed = claim_next()
     if claimed is None:
         return False
+    execute_claimed(claimed)
+    return True
 
+
+def claim_for_worker() -> tuple[int, int, int] | None:
+    """Claim the next image and return the database connection before the AI call."""
+    recover_stale_jobs()
+    claimed = claim_next()
+    db.session.remove()
+    return claimed
+
+
+def execute_claimed(claimed: tuple[int, int, int]) -> None:
+    """Run the AI phases for a job that is already marked processing."""
     job_id, image_id, attempt = claimed
     db.session.remove()
     try:
-        phases = _analyze_phases(image_id)
-    except APIError as exc:
-        _finish_job(job_id, attempt, error_detail=exc.detail)
-        return True
-    except Exception:
-        current_app.logger.exception("analysis job %s failed", job_id)
+        try:
+            phases = _analyze_phases(image_id)
+        except APIError as exc:
+            _finish_job(job_id, attempt, error_detail=exc.detail)
+            return
+        except Exception:
+            current_app.logger.exception("analysis job %s failed", job_id)
+            db.session.remove()
+            _finish_job(job_id, attempt, error_detail="Analysis failed unexpectedly.")
+            return
+        _finish_job(job_id, attempt, phases=phases)
+    finally:
         db.session.remove()
-        _finish_job(job_id, attempt, error_detail="Analysis failed unexpectedly.")
-        return True
-
-    _finish_job(job_id, attempt, phases=phases)
-    return True
 
 
 def build_queue_view() -> dict:
     active = (
-        AnalysisJob.query.filter(AnalysisJob.status.in_(ACTIVE_JOB_STATUSES))
+        AnalysisJob.query.options(selectinload(AnalysisJob.ai_result))
+        .filter(AnalysisJob.status.in_(ACTIVE_JOB_STATUSES))
         .order_by(AnalysisJob.queued_at.asc(), AnalysisJob.id.asc())
         .all()
     )
@@ -110,7 +126,8 @@ def build_queue_view() -> dict:
     processing_job = processing_jobs[0] if processing_jobs else None
     queued_jobs = [job for job in active if job.status == JOB_QUEUED]
     finished = (
-        AnalysisJob.query.filter(AnalysisJob.status.in_((JOB_COMPLETED, JOB_FAILED)))
+        AnalysisJob.query.options(selectinload(AnalysisJob.ai_result))
+        .filter(AnalysisJob.status.in_((JOB_COMPLETED, JOB_FAILED)))
         .order_by(AnalysisJob.finished_at.desc(), AnalysisJob.id.desc())
         .limit(_RECENTLY_FINISHED_LIMIT)
         .all()
@@ -183,18 +200,20 @@ def sync_screening_status(screening: Screening) -> None:
     if screening.status in _FROZEN_SCREENING_STATUSES:
         return
 
-    jobs = (
-        AnalysisJob.query.filter_by(screening_id=screening.id)
+    statuses = [
+        status
+        for (status,) in db.session.query(AnalysisJob.status)
+        .filter(AnalysisJob.screening_id == screening.id)
         .order_by(AnalysisJob.id.asc())
         .all()
-    )
-    if any(job.status == JOB_PROCESSING for job in jobs):
+    ]
+    if JOB_PROCESSING in statuses:
         screening.status = "ANALYZING"
-    elif any(job.status == JOB_QUEUED for job in jobs):
+    elif JOB_QUEUED in statuses:
         screening.status = "QUEUED"
-    elif jobs and jobs[-1].status == JOB_COMPLETED:
+    elif statuses and statuses[-1] == JOB_COMPLETED:
         screening.status = "ANALYZED"
-    elif jobs and jobs[-1].status == JOB_FAILED:
+    elif statuses and statuses[-1] == JOB_FAILED:
         screening.status = "ANALYSIS_FAILED"
     screening.updated_at = utcnow()
 
@@ -344,6 +363,7 @@ def _finish_job(
     sync_screening_status(job.screening)
     db.session.commit()
     current_app.logger.info("analysis job %s %s", job.id, job.status)
+    _wake_worker()
 
 
 def _wake_worker() -> None:

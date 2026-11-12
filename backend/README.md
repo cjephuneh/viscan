@@ -82,6 +82,7 @@ A revision that is already committed and upgraded stays as written. Later work i
 | 12 | `012_screening_contact` | `phone` and `notify_channel` on `screenings` | add screening patient contact |
 | 13 | `013_ai_recommendation` | `recommendation` on `ai_results` | add ai result recommendation |
 | 15 | `015_parallel_ai_phases` | many images in progress, `phase` on each AI result | analyze patients in parallel |
+| 16 | `016_analysis_job_finished_index` | index on (`status`, `finished_at`) | speed up the recent-results query |
 
 Phase 10 is the data migration for the two starter facilities. `flask seed-facilities` remains for resetting a local database.
 
@@ -114,7 +115,7 @@ Errors use a consistent body: `{"detail": "..."}`.
 
 ## Analysis queue
 
-Uploading an image does not wait for the AI service. The API stores the file, inserts an `analysis_jobs` row with status `queued`, and returns. A pool of workers then analyzes different patients at the same time. `QUEUE_CONCURRENCY` is how many images may be in progress (1 to 100, default 100).
+Uploading an image does not wait for the AI service. The API stores the file, inserts an `analysis_jobs` row with status `queued`, and returns. One dispatcher claims jobs, and a pool of workers analyzes different patients at the same time. `QUEUE_CONCURRENCY` is how many images may be in progress (1 to 100, default 100). The database pool is sized for that burst, and AI calls reuse one HTTP client so later phases do not open a new connection. Image bytes are cached for a day, so a repeat fetch can return 304.
 
 Each image goes through `AI_PHASE_COUNT` checks (1 to 3, default 3). Phase 1 reads the image. Each later phase receives that image plus the previous model's prediction, confidence, and recommendation, and returns its own result. The stored job result is the last phase. Set `AI_PHASE_URLS` to a comma-separated list when each phase has its own service; otherwise every phase uses `AI_API_URL`.
 

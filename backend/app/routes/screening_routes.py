@@ -1,11 +1,11 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint
-
 from marshmallow import Schema, fields
+from sqlalchemy.orm import selectinload
 
 from app.errors import APIError
 from app.extensions import db
-from app.models import Facility, Screening
+from app.models import AnalysisJob, Facility, Screening, VIAImage
 from app.schemas.common import DetailSchema
 from app.schemas.screening import (
     ScreeningCreateSchema,
@@ -98,7 +98,21 @@ class ScreeningDetail(MethodView):
     @blp.response(200, ScreeningDetailSchema)
     @blp.alt_response(404, schema=DetailSchema)
     def get(self, screening_id):
-        return _get_screening_or_404(screening_id)
+        screening = (
+            db.session.query(Screening)
+            .options(
+                selectinload(Screening.images)
+                .selectinload(VIAImage.analysis_jobs)
+                .selectinload(AnalysisJob.ai_result),
+                selectinload(Screening.images).selectinload(VIAImage.ai_results),
+                selectinload(Screening.assessment),
+            )
+            .filter(Screening.id == screening_id)
+            .first()
+        )
+        if screening is None:
+            raise APIError("Screening not found.", 404)
+        return screening
 
     @blp.arguments(ScreeningUpdateSchema)
     @blp.response(200, ScreeningSchema)

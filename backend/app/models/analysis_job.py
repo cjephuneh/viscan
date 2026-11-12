@@ -21,6 +21,7 @@ class AnalysisJob(db.Model):
     __tablename__ = "analysis_jobs"
     __table_args__ = (
         Index("ix_analysis_jobs_status_queued_at", "status", "queued_at"),
+        Index("ix_analysis_jobs_status_finished_at", "status", "finished_at"),
         Index(
             "uq_analysis_jobs_one_active_image",
             "via_image_id",

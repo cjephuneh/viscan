@@ -1,14 +1,19 @@
-"""In-process pool that analyzes different patient images at the same time."""
+"""In-process pool that analyzes different patient images at the same time.
+
+One dispatcher claims jobs. Daemon workers, sized by QUEUE_CONCURRENCY, run the
+AI calls. Idle workers wait on an in-memory queue, so they do not poll the database.
+"""
 
 from __future__ import annotations
 
 import os
+import queue
 import threading
 
 from flask import Flask
 
 from app.extensions import db
-from app.services.queue_service import process_next
+from app.services.queue_service import claim_for_worker, execute_claimed
 
 
 class AnalysisQueueWorker:
@@ -16,6 +21,8 @@ class AnalysisQueueWorker:
         self.app = app
         self._stop = threading.Event()
         self._wake = threading.Event()
+        self._jobs: queue.Queue[tuple[int, int, int] | None] = queue.Queue()
+        self._slots: threading.Semaphore | None = None
         self._threads: list[threading.Thread] = []
 
     def wake(self) -> None:
@@ -27,48 +34,87 @@ class AnalysisQueueWorker:
             return
         self._stop.clear()
         count = int(self.app.config.get("QUEUE_CONCURRENCY", 1))
+        self._slots = threading.Semaphore(count)
+        self._jobs = queue.Queue()
         self._threads = []
+        dispatch = threading.Thread(
+            target=self._dispatch_loop,
+            name="via-analysis-dispatch",
+            daemon=True,
+        )
+        dispatch.start()
+        self._threads.append(dispatch)
         for index in range(count):
-            thread = threading.Thread(
-                target=self._loop,
+            worker = threading.Thread(
+                target=self._run_loop,
                 name=f"via-analysis-{index + 1}",
                 daemon=True,
             )
-            thread.start()
-            self._threads.append(thread)
+            worker.start()
+            self._threads.append(worker)
         self.app.logger.info("VIA analysis pool started with %s workers", count)
 
     def stop(self, timeout: float = 2.0) -> None:
         self._stop.set()
         self._wake.set()
+        count = sum(1 for thread in self._threads if thread.name.startswith("via-analysis-"))
+        # The dispatcher thread is included in that count. One sentinel per worker
+        # is enough; extra sentinels are harmless.
+        for _ in range(max(count, 1)):
+            self._jobs.put(None)
         for thread in list(self._threads):
             if thread is not threading.current_thread():
                 thread.join(timeout=timeout)
 
-    def _loop(self) -> None:
+    def _dispatch_loop(self) -> None:
         while not self._stop.is_set():
-            worked = False
+            slots = self._slots
+            if slots is None or not slots.acquire(timeout=self.app.config["QUEUE_POLL_SECONDS"]):
+                continue
+            if self._stop.is_set():
+                slots.release()
+                return
+
+            claimed = None
             try:
                 with self.app.app_context():
                     try:
-                        worked = process_next()
+                        claimed = claim_for_worker()
                     except Exception:
                         db.session.rollback()
                         raise
             except Exception:
+                slots.release()
                 self.app.logger.exception("VIA analysis queue worker error")
-                try:
-                    with self.app.app_context():
-                        db.session.rollback()
-                except Exception:
-                    self.app.logger.exception("failed to roll back analysis queue session")
-            if worked:
                 continue
-            # Idle only. A new upload sets _wake and this returns at once.
-            self._wake.wait(self.app.config["QUEUE_POLL_SECONDS"])
-            self._wake.clear()
-            if self._stop.is_set():
+
+            if claimed is None:
+                slots.release()
+                self._wake.wait(self.app.config["QUEUE_POLL_SECONDS"])
+                self._wake.clear()
+                continue
+
+            self._jobs.put(claimed)
+
+    def _run_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                claimed = self._jobs.get(timeout=self.app.config["QUEUE_POLL_SECONDS"])
+            except queue.Empty:
+                continue
+            if claimed is None:
                 return
+            try:
+                with self.app.app_context():
+                    try:
+                        execute_claimed(claimed)
+                    except Exception:
+                        db.session.rollback()
+                        self.app.logger.exception("VIA analysis queue worker error")
+            finally:
+                if self._slots is not None:
+                    self._slots.release()
+                self._wake.set()
 
 
 def wake_analysis_worker() -> None:
