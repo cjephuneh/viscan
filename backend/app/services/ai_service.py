@@ -6,9 +6,12 @@ import httpx
 from flask import current_app
 
 from app.errors import APIError
+from app.services.http_client import shared_client
 
+_REAL_CLIENT = httpx.Client
 
 REQUIRED_KEYS = ("prediction", "confidence", "model_version", "processing_time_ms")
+_VIA_RESULTS = {"VIA_NEGATIVE", "VIA_POSITIVE", "SUSPICIOUS_FOR_CANCER", "INADEQUATE"}
 
 
 def _validate_ai_payload(payload: Any) -> dict[str, Any]:
@@ -95,31 +98,56 @@ def _load_image(image_id: int) -> tuple[bytes, str, str]:
     return data, filename, image.media_type
 
 
-def analyze_image(image_url: str, image_id: int) -> dict[str, Any]:
-    """Send the stored VIA image to the AI interpreter and normalise its answer.
+def phase_targets() -> list[str]:
+    """Interpreter URLs for each review phase. Later phases see the previous result."""
+    count = int(current_app.config.get("AI_PHASE_COUNT", 1))
+    raw = (current_app.config.get("AI_PHASE_URLS") or "").strip()
+    urls = [part.strip().rstrip("/") for part in raw.split(",") if part.strip()]
+    fallback = current_app.config["AI_API_URL"].rstrip("/")
+    if not urls:
+        urls = [fallback]
+    while len(urls) < count:
+        urls.append(urls[-1])
+    return urls[:count]
 
-    ``image_url`` is kept for logging/back-compat; the bytes are read from blob
-    storage and posted as multipart, so the AI service never has to fetch
-    anything back from this API.
+
+def analyze_image(
+    image_url: str,
+    image_id: int,
+    *,
+    phase: int = 1,
+    prior: dict[str, Any] | None = None,
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    """Send the stored VIA image to the interpreter and normalise its answer.
+
+    ``image_url`` is kept for logging. The bytes are read from storage and posted
+    as multipart, so the interpreter does not fetch them back from this API.
+    A later phase sends the previous reading in the visit notes.
     """
-    base_url = current_app.config["AI_API_URL"].rstrip("/")
+    if not base_url:
+        base_url = current_app.config["AI_API_URL"]
     timeout = current_app.config["AI_TIMEOUT_SECONDS"]
-    url = f"{base_url}/api/v1/interpret"
+    url = f"{base_url.rstrip('/')}/api/v1/interpret"
 
     data, filename, media_type = _load_image(image_id)
     headers = {}
     if current_app.config.get("AI_API_KEY"):
         headers["X-API-Key"] = current_app.config["AI_API_KEY"]
-    form = {"site": "viscan-backend", "notes": f"backend image {image_id} ({image_url})"}
+    notes = f"backend image {image_id} ({image_url}). Review phase {phase}."
+    form: dict[str, str] = {"site": "viscan-backend", "notes": notes}
+    if prior:
+        prediction = str(prior.get("prediction") or "").strip()
+        confidence = prior.get("confidence")
+        form["notes"] = (
+            f"{notes} Previous reading: {prediction}"
+            + (f" at confidence {confidence}." if confidence is not None else ".")
+        )[:1000]
+        if prediction in _VIA_RESULTS:
+            form["previous_screening_result"] = prediction
 
     try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.post(
-                url,
-                files={"image": (filename, data, media_type)},
-                data=form,
-                headers=headers,
-            )
+        response = _post_image(url, data, filename, media_type, form, headers, timeout)
     except httpx.TimeoutException as exc:
         raise APIError("AI service timed out.", 504) from exc
     except httpx.RequestError as exc:
@@ -138,3 +166,13 @@ def analyze_image(image_url: str, image_id: int) -> dict[str, Any]:
     if isinstance(payload, dict) and "interpretation_id" in payload:
         return _from_interpreter_payload(payload)
     return _validate_ai_payload(payload)
+
+
+def _post_image(url, data, filename, media_type, form, headers, timeout):
+    # Tests replace httpx.Client and expect a context manager. Production uses
+    # the shared client so the next phase does not open a new connection.
+    files = {"image": (filename, data, media_type)}
+    if httpx.Client is not _REAL_CLIENT:
+        with httpx.Client(timeout=timeout) as client:
+            return client.post(url, files=files, data=form, headers=headers)
+    return shared_client().post(url, files=files, data=form, headers=headers, timeout=timeout)

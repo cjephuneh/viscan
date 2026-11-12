@@ -6,6 +6,7 @@ import httpx
 from flask import current_app
 
 from app.errors import APIError
+from app.services.http_client import shared_client
 
 
 def send_sms(to: str, message: str) -> dict[str, Any]:
@@ -22,12 +23,12 @@ def send_sms(to: str, message: str) -> dict[str, Any]:
 
     timeout = current_app.config["EXTERNAL_TIMEOUT_SECONDS"]
     try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.post(
-                api_url.rstrip("/") + "/sms",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={"to": to, "message": message},
-            )
+        response = shared_client().post(
+            api_url.rstrip("/") + "/sms",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"to": to, "message": message},
+            timeout=timeout,
+        )
     except httpx.RequestError as exc:
         raise APIError("SMS provider is unavailable.", 503) from exc
 

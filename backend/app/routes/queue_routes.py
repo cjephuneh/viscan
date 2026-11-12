@@ -13,8 +13,8 @@ blp = Blueprint(
     __name__,
     url_prefix="/api/v1",
     description=(
-        "VIA analysis queue. One image is analyzed at a time. "
-        "Further uploads stay queued until the current image finishes."
+        "VIA analysis queue. Different patients are analyzed at the same time, "
+        "up to the configured concurrency. Further uploads wait for a free worker."
     ),
 )
 

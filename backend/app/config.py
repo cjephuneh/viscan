@@ -7,6 +7,14 @@ from sqlalchemy.pool import StaticPool
 load_dotenv()
 
 
+def _bounded_int(name: str, default: int, low: int, high: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return max(low, min(high, value))
+
+
 def build_database_url() -> str:
     """Build a psycopg URL. An explicit DATABASE_URL overrides DB_* parts."""
     explicit = os.getenv("DATABASE_URL", "").strip()
@@ -52,8 +60,8 @@ class BaseConfig:
 
     PORT = int(os.getenv("PORT", "8080"))
     PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8080")
-    AI_API_URL = os.getenv("AI_API_URL", "http://localhost:8000")
-    AI_TIMEOUT_SECONDS = float(os.getenv("AI_TIMEOUT_SECONDS", "60"))
+    AI_API_URL = os.getenv("AI_API_URL", "http://localhost:5050")
+    AI_TIMEOUT_SECONDS = float(os.getenv("AI_TIMEOUT_SECONDS", "120"))
     EXTERNAL_TIMEOUT_SECONDS = float(os.getenv("EXTERNAL_TIMEOUT_SECONDS", "30"))
 
     MAPS_API_KEY = os.getenv("MAPS_API_KEY", "")
@@ -84,26 +92,35 @@ class BaseConfig:
     S3_PREFIX = os.getenv("S3_PREFIX", "backend/")
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 
-    # One in-process worker drains analysis_jobs. The database still allows
-    # only one processing row if more than one API process is running.
+    # Parallel in-process workers. Each worker analyzes a different patient image.
     QUEUE_WORKER_ENABLED = os.getenv("QUEUE_WORKER_ENABLED", "true").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
+    QUEUE_CONCURRENCY = _bounded_int("QUEUE_CONCURRENCY", 100, 1, 100)
     QUEUE_POLL_SECONDS = float(os.getenv("QUEUE_POLL_SECONDS", "0.5"))
     QUEUE_STALE_SECONDS = float(os.getenv("QUEUE_STALE_SECONDS", "120"))
     QUEUE_MAX_ATTEMPTS = int(os.getenv("QUEUE_MAX_ATTEMPTS", "2"))
+    # Each image is analyzed, then checked by later phases. 1 to 3.
+    AI_PHASE_COUNT = _bounded_int("AI_PHASE_COUNT", 3, 1, 3)
+    AI_PHASE_URLS = os.getenv("AI_PHASE_URLS", "")
 
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = build_database_url()
+    # The analysis pool releases its connection while the AI call is in flight,
+    # then needs one again to store the result. Size the pool for that burst
+    # without exceeding Postgres' default connection limit.
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
-        "connect_args": {"connect_timeout": 2},
-        "pool_timeout": 2,
+        "pool_size": 20,
+        "max_overflow": 50,
+        "pool_timeout": 30,
+        "pool_recycle": 280,
+        "connect_args": {"connect_timeout": 5},
     }
 
 
@@ -136,6 +153,9 @@ class TestingConfig(BaseConfig):
     VOICE_API_KEY = ""
     VOICE_API_URL = ""
     QUEUE_WORKER_ENABLED = False
+    QUEUE_CONCURRENCY = 1
+    AI_PHASE_COUNT = 1
+    AI_PHASE_URLS = ""
     QUEUE_POLL_SECONDS = 0.05
 
 

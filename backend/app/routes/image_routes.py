@@ -77,5 +77,9 @@ class ImageFile(MethodView):
     def get(self, image_id):
         image = _get_image_or_404(image_id)
         data = load_image_bytes(image.file_path)
-        return send_file(io.BytesIO(data), mimetype=image.media_type, as_attachment=False,
-                         max_age=86400)
+        return send_file(
+            io.BytesIO(data),
+            mimetype=image.media_type,
+            as_attachment=False,
+            max_age=86400,
+        )

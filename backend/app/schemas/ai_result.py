@@ -9,4 +9,5 @@ class AIResultSchema(Schema):
     model_version = fields.String()
     processing_time_ms = fields.Integer()
     recommendation = fields.String(allow_none=True)
+    phase = fields.Integer(dump_only=True)
     created_at = fields.DateTime(dump_only=True)

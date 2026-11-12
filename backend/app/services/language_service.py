@@ -6,6 +6,7 @@ import httpx
 from flask import current_app
 
 from app.errors import APIError
+from app.services.http_client import shared_client
 
 
 def translate(text: str, source_language: str, target_language: str) -> dict[str, Any]:
@@ -22,16 +23,16 @@ def translate(text: str, source_language: str, target_language: str) -> dict[str
 
     timeout = current_app.config["EXTERNAL_TIMEOUT_SECONDS"]
     try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.post(
-                api_url.rstrip("/") + "/translate",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "text": text,
-                    "source_language": source_language,
-                    "target_language": target_language,
-                },
-            )
+        response = shared_client().post(
+            api_url.rstrip("/") + "/translate",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "text": text,
+                "source_language": source_language,
+                "target_language": target_language,
+            },
+            timeout=timeout,
+        )
     except httpx.RequestError as exc:
         raise APIError("Language provider is unavailable.", 503) from exc
 

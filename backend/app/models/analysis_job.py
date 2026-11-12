@@ -12,22 +12,16 @@ ACTIVE_JOB_STATUSES = (JOB_QUEUED, JOB_PROCESSING)
 
 
 class AnalysisJob(db.Model):
-    """One VIA image waiting for, or finished with, the single analysis worker.
+    """One VIA image waiting for or finished with the analysis pool.
 
-    Only one row may be ``processing`` at a time. That constraint is what keeps
-    a second upload in the queue until the image already being analyzed finishes.
+    Many rows may be ``processing`` at once, up to ``QUEUE_CONCURRENCY``.
+    An image still has only one queued or processing job.
     """
 
     __tablename__ = "analysis_jobs"
     __table_args__ = (
         Index("ix_analysis_jobs_status_queued_at", "status", "queued_at"),
-        Index(
-            "uq_analysis_jobs_one_processing",
-            "status",
-            unique=True,
-            postgresql_where=text("status = 'processing'"),
-            sqlite_where=text("status = 'processing'"),
-        ),
+        Index("ix_analysis_jobs_status_finished_at", "status", "finished_at"),
         Index(
             "uq_analysis_jobs_one_active_image",
             "via_image_id",

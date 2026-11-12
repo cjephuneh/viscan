@@ -472,6 +472,8 @@ def _context_text(context: dict) -> str:
         parts.append("symptoms: " + ", ".join(s.replace("_", " ") for s in symptoms))
     if context.get("previous_screening_result"):
         parts.append(f"last recorded VIA result: {context['previous_screening_result']}")
+    if context.get("notes"):
+        parts.append("notes: " + str(context["notes"])[:500])
     prior = context.get("previous_screens") or []
     if prior:
         # Newest-first longitudinal history so the model can compare change over time.

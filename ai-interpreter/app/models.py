@@ -83,6 +83,7 @@ class ScreeningVisit(db.Model):
             "previous_screening_result": self.previous_screening_result,
             "symptoms": self.symptoms or [],
             "smoker": self.smoker,
+            "notes": self.notes,
         }
 
     def to_dict(self):
