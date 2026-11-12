@@ -771,10 +771,10 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 </figure>
               </div>
               <div className="frame-actions">
-                <button type="button" onClick={() => inputRef.current?.click()} disabled={phase === "reading"}>
+                <button type="button" onClick={() => inputRef.current?.click()}>
                   Replace
                 </button>
-                <button type="button" onClick={clearImage} disabled={phase === "reading"}>
+                <button type="button" onClick={clearImage}>
                   Remove
                 </button>
               </div>
