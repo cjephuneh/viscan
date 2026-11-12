@@ -23,5 +23,6 @@ class AnalysisQueueSchema(Schema):
     processing_count = fields.Integer(dump_only=True)
     queued_count = fields.Integer(dump_only=True)
     processing = fields.Nested(AnalysisJobSchema, allow_none=True, dump_only=True)
+    processing_jobs = fields.List(fields.Nested(AnalysisJobSchema), dump_only=True)
     queued = fields.List(fields.Nested(AnalysisJobSchema), dump_only=True)
     recently_finished = fields.List(fields.Nested(AnalysisJobSchema), dump_only=True)

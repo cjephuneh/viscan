@@ -1,9 +1,9 @@
 """Durable FIFO queue for VIA analysis.
 
-Uploads return as soon as the image and its job are stored. A single worker
-claims the oldest queued job, calls the AI service, then claims the next one.
-The database allows only one ``processing`` row, so a second API process cannot
-analyze two images at the same time.
+Uploads return as soon as the image and its job are stored. A pool of workers
+claims different patients at the same time, up to QUEUE_CONCURRENCY. Each image
+then passes through AI_PHASE_COUNT checks: the first model reads the image, and
+each later model reviews the previous result.
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def process_next() -> bool:
     job_id, image_id, attempt = claimed
     db.session.remove()
     try:
-        payload = _analyze(image_id)
+        phases = _analyze_phases(image_id)
     except APIError as exc:
         _finish_job(job_id, attempt, error_detail=exc.detail)
         return True
@@ -96,7 +96,7 @@ def process_next() -> bool:
         _finish_job(job_id, attempt, error_detail="Analysis failed unexpectedly.")
         return True
 
-    _finish_job(job_id, attempt, payload=payload)
+    _finish_job(job_id, attempt, phases=phases)
     return True
 
 
@@ -106,7 +106,8 @@ def build_queue_view() -> dict:
         .order_by(AnalysisJob.queued_at.asc(), AnalysisJob.id.asc())
         .all()
     )
-    processing_job = next((job for job in active if job.status == JOB_PROCESSING), None)
+    processing_jobs = [job for job in active if job.status == JOB_PROCESSING]
+    processing_job = processing_jobs[0] if processing_jobs else None
     queued_jobs = [job for job in active if job.status == JOB_QUEUED]
     finished = (
         AnalysisJob.query.filter(AnalysisJob.status.in_((JOB_COMPLETED, JOB_FAILED)))
@@ -117,13 +118,14 @@ def build_queue_view() -> dict:
 
     queued_payloads = []
     for index, job in enumerate(queued_jobs):
-        ahead = index + (1 if processing_job is not None else 0)
+        ahead = index + len(processing_jobs)
         queued_payloads.append(present_job(job, (ahead + 1, ahead)))
 
     return {
-        "processing_count": 1 if processing_job is not None else 0,
+        "processing_count": len(processing_jobs),
         "queued_count": len(queued_jobs),
         "processing": present_job(processing_job, (1, 0)) if processing_job is not None else None,
+        "processing_jobs": [present_job(job, (1, 0)) for job in processing_jobs],
         "queued": queued_payloads,
         "recently_finished": [present_job(job, (None, None)) for job in finished],
     }
@@ -222,10 +224,11 @@ def recover_stale_jobs() -> None:
 
 
 def claim_next() -> tuple[int, int, int] | None:
+    limit = int(current_app.config.get("QUEUE_CONCURRENCY", 1))
     busy = (
-        db.session.query(AnalysisJob.id).filter(AnalysisJob.status == JOB_PROCESSING).first()
+        db.session.query(AnalysisJob.id).filter(AnalysisJob.status == JOB_PROCESSING).count()
     )
-    if busy is not None:
+    if busy >= limit:
         return None
 
     job = (
@@ -271,12 +274,29 @@ def claim_next() -> tuple[int, int, int] | None:
     return job_id, image_id, attempt
 
 
-def _analyze(image_id: int) -> dict:
-    from app.services.ai_service import analyze_image
+def _analyze_phases(image_id: int) -> list[dict]:
+    from app.services.ai_service import analyze_image, phase_targets
 
     public_base = current_app.config["PUBLIC_BASE_URL"].rstrip("/")
     image_url = f"{public_base}/api/v1/images/{image_id}/file"
-    return analyze_image(image_url=image_url, image_id=image_id)
+    targets = phase_targets()
+    if len(targets) == 1:
+        return [analyze_image(image_url, image_id)]
+
+    phases: list[dict] = []
+    prior = None
+    for phase, base_url in enumerate(targets, start=1):
+        payload = analyze_image(
+            image_url,
+            image_id,
+            phase=phase,
+            prior=prior,
+            base_url=base_url,
+        )
+        payload = {**payload, "phase": phase}
+        phases.append(payload)
+        prior = payload
+    return phases
 
 
 def _finish_job(
@@ -284,6 +304,7 @@ def _finish_job(
     attempt: int,
     *,
     payload: dict | None = None,
+    phases: list[dict] | None = None,
     error_detail: str | None = None,
 ) -> None:
     job = db.session.get(AnalysisJob, job_id)
@@ -294,21 +315,27 @@ def _finish_job(
         db.session.rollback()
         return
 
-    if payload is None:
+    if phases is None and payload is not None:
+        phases = [payload]
+    if not phases:
         job.status = JOB_FAILED
         job.error_detail = (error_detail or "Analysis failed.")[:500]
     else:
-        result = AIResult(
-            via_image_id=job.via_image_id,
-            prediction=payload["prediction"],
-            confidence=payload["confidence"],
-            model_version=payload["model_version"],
-            processing_time_ms=payload["processing_time_ms"],
-            recommendation=payload.get("recommendation"),
-        )
-        db.session.add(result)
-        db.session.flush()
-        job.ai_result_id = result.id
+        final = None
+        for index, phase_payload in enumerate(phases, start=1):
+            result = AIResult(
+                via_image_id=job.via_image_id,
+                prediction=phase_payload["prediction"],
+                confidence=phase_payload["confidence"],
+                model_version=phase_payload["model_version"],
+                processing_time_ms=phase_payload["processing_time_ms"],
+                recommendation=phase_payload.get("recommendation"),
+                phase=int(phase_payload.get("phase") or index),
+            )
+            db.session.add(result)
+            db.session.flush()
+            final = result
+        job.ai_result_id = final.id if final is not None else None
         job.status = JOB_COMPLETED
         job.error_detail = None
 

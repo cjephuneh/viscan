@@ -6,14 +6,12 @@ from unittest.mock import patch
 
 import pytest
 from PIL import Image
-from sqlalchemy.exc import IntegrityError
-
 from app import create_app
 from app.errors import APIError
 from app.extensions import db
 from app.models import AnalysisJob, Facility, Screening
 from app.services.analysis_worker import start_analysis_worker, stop_analysis_worker
-from app.services.queue_service import build_queue_view, process_next
+from app.services.queue_service import build_queue_view, claim_next, process_next
 from app.utils.time import utcnow
 
 
@@ -214,20 +212,51 @@ def test_upload_is_accepted_while_another_image_is_processing(client, app, facil
     assert client.get(f"/api/v1/screenings/{second_screening['id']}/").get_json()["status"] == "ANALYZED"
 
 
-def test_database_allows_only_one_processing_job(client, app, facility):
+def test_two_patients_are_analyzed_at_the_same_time(client, app, facility):
+    app.config["QUEUE_CONCURRENCY"] = 2
     _upload(client, _screening(client, facility, "VIA-000141")["id"])
     _upload(client, _screening(client, facility, "VIA-000142")["id"])
+    _upload(client, _screening(client, facility, "VIA-000143")["id"])
 
     with app.app_context():
-        jobs = AnalysisJob.query.order_by(AnalysisJob.id).all()
-        jobs[0].status = "processing"
-        jobs[0].started_at = utcnow()
-        db.session.commit()
-        jobs[1].status = "processing"
-        jobs[1].started_at = utcnow()
-        with pytest.raises(IntegrityError):
-            db.session.commit()
-        db.session.rollback()
+        assert claim_next() is not None
+        assert claim_next() is not None
+        assert claim_next() is None
+
+    queue = client.get("/api/v1/analysis-queue/").get_json()
+    assert queue["processing_count"] == 2
+    assert queue["queued_count"] == 1
+    assert len(queue["processing_jobs"]) == 2
+
+
+def test_three_ai_phases_review_the_previous_result(client, app, facility):
+    app.config["AI_PHASE_COUNT"] = 3
+    app.config["AI_PHASE_URLS"] = "http://ai-1.test,http://ai-2.test,http://ai-3.test"
+    uploaded = _upload(client, _screening(client, facility, "VIA-000161")["id"])
+    calls = []
+
+    def fake(image_url, image_id, phase=1, prior=None, base_url=None):
+        calls.append((phase, None if prior is None else prior["prediction"], base_url))
+        return {
+            "prediction": f"label-{phase}",
+            "confidence": 0.7,
+            "model_version": f"phase-{phase}",
+            "processing_time_ms": phase,
+        }
+
+    with app.app_context():
+        with patch("app.services.ai_service.analyze_image", side_effect=fake):
+            assert process_next() is True
+
+    assert calls == [
+        (1, None, "http://ai-1.test"),
+        (2, "label-1", "http://ai-2.test"),
+        (3, "label-2", "http://ai-3.test"),
+    ]
+    job = client.get(f"/api/v1/analysis-jobs/{uploaded['analysis_job']['id']}/").get_json()
+    assert job["status"] == "completed"
+    assert job["ai_result"]["prediction"] == "label-3"
+    assert job["ai_result"]["phase"] == 3
 
 
 def test_stale_processing_job_is_dropped_after_the_last_attempt(client, app, facility):

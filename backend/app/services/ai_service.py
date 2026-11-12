@@ -50,11 +50,44 @@ def _validate_ai_payload(payload: Any) -> dict[str, Any]:
     }
 
 
-def analyze_image(image_url: str, image_id: int) -> dict[str, Any]:
-    base_url = current_app.config["AI_API_URL"].rstrip("/")
+def phase_targets() -> list[str]:
+    """URLs for the analysis agency. Later phases review the previous result."""
+    count = int(current_app.config.get("AI_PHASE_COUNT", 1))
+    raw = (current_app.config.get("AI_PHASE_URLS") or "").strip()
+    urls = [part.strip().rstrip("/") for part in raw.split(",") if part.strip()]
+    fallback = current_app.config["AI_API_URL"].rstrip("/")
+    if not urls:
+        urls = [fallback]
+    while len(urls) < count:
+        urls.append(urls[-1])
+    return urls[:count]
+
+
+def analyze_image(
+    image_url: str,
+    image_id: int,
+    *,
+    phase: int = 1,
+    prior: dict[str, Any] | None = None,
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    if not base_url:
+        base_url = current_app.config["AI_API_URL"]
     timeout = current_app.config["AI_TIMEOUT_SECONDS"]
-    url = f"{base_url}/predict"
-    body = {"image_url": image_url, "image_id": image_id}
+    url = f"{base_url.rstrip('/')}/predict"
+    body: dict[str, Any] = {
+        "image_url": image_url,
+        "image_id": image_id,
+        "phase": phase,
+    }
+    if prior:
+        body["prior_result"] = {
+            "prediction": prior.get("prediction"),
+            "confidence": prior.get("confidence"),
+            "model_version": prior.get("model_version"),
+            "recommendation": prior.get("recommendation"),
+            "phase": prior.get("phase", phase - 1),
+        }
 
     try:
         with httpx.Client(timeout=timeout) as client:

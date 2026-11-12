@@ -1,4 +1,4 @@
-"""In-process worker that drains the VIA analysis queue one image at a time."""
+"""In-process pool that analyzes different patient images at the same time."""
 
 from __future__ import annotations
 
@@ -16,30 +16,34 @@ class AnalysisQueueWorker:
         self.app = app
         self._stop = threading.Event()
         self._wake = threading.Event()
-        self._thread: threading.Thread | None = None
+        self._threads: list[threading.Thread] = []
 
     def wake(self) -> None:
         """Start a waiting image immediately. No poll interval before it runs."""
         self._wake.set()
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
+        if any(thread.is_alive() for thread in self._threads):
             return
         self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._loop,
-            name="via-analysis-queue",
-            daemon=True,
-        )
-        self._thread.start()
-        self.app.logger.info("VIA analysis queue worker started")
+        count = int(self.app.config.get("QUEUE_CONCURRENCY", 1))
+        self._threads = []
+        for index in range(count):
+            thread = threading.Thread(
+                target=self._loop,
+                name=f"via-analysis-{index + 1}",
+                daemon=True,
+            )
+            thread.start()
+            self._threads.append(thread)
+        self.app.logger.info("VIA analysis pool started with %s workers", count)
 
     def stop(self, timeout: float = 2.0) -> None:
         self._stop.set()
         self._wake.set()
-        thread = self._thread
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=timeout)
+        for thread in list(self._threads):
+            if thread is not threading.current_thread():
+                thread.join(timeout=timeout)
 
     def _loop(self) -> None:
         while not self._stop.is_set():

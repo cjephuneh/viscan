@@ -81,6 +81,7 @@ A revision that is already committed and upgraded stays as written. Later work i
 | 11 | `011_analysis_jobs` | `analysis_jobs` queue, one processing job and one active job per image | add analysis jobs queue |
 | 12 | `012_screening_contact` | `phone` and `notify_channel` on `screenings` | add screening patient contact |
 | 13 | `013_ai_recommendation` | `recommendation` on `ai_results` | add ai result recommendation |
+| 15 | `015_parallel_ai_phases` | many images in progress, `phase` on each AI result | analyze patients in parallel |
 
 Phase 10 is the data migration for the two starter facilities. `flask seed-facilities` remains for resetting a local database.
 
@@ -113,9 +114,11 @@ Errors use a consistent body: `{"detail": "..."}`.
 
 ## Analysis queue
 
-Uploading an image does not wait for the AI service. The API stores the file, inserts an `analysis_jobs` row with status `queued`, and returns. A worker inside the API process then takes the oldest queued image, marks it `processing`, calls the AI service, and only then takes the next image.
+Uploading an image does not wait for the AI service. The API stores the file, inserts an `analysis_jobs` row with status `queued`, and returns. A pool of workers then analyzes different patients at the same time. `QUEUE_CONCURRENCY` is how many images may be in progress (1 to 100, default 100).
 
-While one image is `processing`, further uploads stay in `queued` with `ahead` set to how many images must finish first. `GET /api/v1/analysis-queue/` is the live view of that line. The database allows only one `processing` row, so a second API process cannot run a second analysis at the same time.
+Each image goes through `AI_PHASE_COUNT` checks (1 to 3, default 3). Phase 1 reads the image. Each later phase receives that image plus the previous model's prediction, confidence, and recommendation, and returns its own result. The stored job result is the last phase. Set `AI_PHASE_URLS` to a comma-separated list when each phase has its own service; otherwise every phase uses `AI_API_URL`.
+
+`GET /api/v1/analysis-queue/` shows every image currently processing and the ones still waiting. `ahead` is how many images are already processing plus how many queued jobs are older.
 
 Screening status follows the queue: `QUEUED`, then `ANALYZING`, then `ANALYZED` or `ANALYSIS_FAILED`. A failed job does not block the images behind it. `POST .../analyze/` queues the latest image again after a failure.
 
