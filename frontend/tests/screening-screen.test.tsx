@@ -85,6 +85,34 @@ describe("ScreeningScreen", () => {
       "src",
       "/api/v1/interpretations/7/overlay.png",
     );
+    expect(container.querySelector(".reading-split")).not.toBeNull();
+    expect(container.querySelector(".frame")).toBeNull();
+  });
+
+  it("keeps the annotated image with the result and shows when models disagree", async () => {
+    fetchMock = mockFetch({
+      interpretBody: {
+        panel: {
+          agreement: "split",
+          readings: [
+            { engine: "heuristic", model: "acetowhite-hsv-baseline-v1", via_result: "VIA_NEGATIVE", confidence: 0.55, error: null },
+            { engine: "remote", model: "other-host", via_result: "VIA_POSITIVE", confidence: 0.8, error: null },
+          ],
+        },
+      },
+    });
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+
+    const models = await screen.findByRole("region", { name: "Model readings" });
+    expect(models).toHaveTextContent("Models disagree");
+    expect(models).toHaveTextContent("acetowhite-hsv-baseline-v1");
+    expect(models).toHaveTextContent("VIA NEGATIVE");
+    expect(models).toHaveTextContent("other-host");
+    expect(models).toHaveTextContent("VIA POSITIVE");
+    expect(container.querySelector(".sticky-read")).not.toBeNull();
   });
 
   it("shows the API error and lets the clinician retry", async () => {

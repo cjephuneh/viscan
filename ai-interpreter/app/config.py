@@ -64,6 +64,9 @@ class Config:
     ).strip()
     VISION_API_TIMEOUT_SECONDS = int(os.getenv("VISION_API_TIMEOUT_SECONDS", "90"))
     FEWSHOT_EXAMPLES = int(os.getenv("FEWSHOT_EXAMPLES", "2"))
+    # Extra model servers that read the same image at the same time as the selected interpreter.
+    PANEL_URLS = os.getenv("PANEL_URLS", "")
+    PANEL_TIMEOUT_SECONDS = int(os.getenv("PANEL_TIMEOUT_SECONDS", "90"))
     REVIEW_CONFIDENCE_THRESHOLD = float(os.getenv("REVIEW_CONFIDENCE_THRESHOLD", "0.75"))
 
     API_KEY = os.getenv("VISCAN_API_KEY", "")

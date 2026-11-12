@@ -648,8 +648,8 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
       </section>
       </div>
 
-      <main className="stage">
-        <section ref={uploadRef} className="panel" aria-labelledby="capture-title" tabIndex={-1}>
+      <main className={result && (phase === "result" || phase === "confirmed") ? "stage reading-split" : "stage"}>
+        <section ref={uploadRef} className="panel capture-column" aria-labelledby="capture-title" tabIndex={-1}>
           <div className="panel-head">
             <h2 id="capture-title">Screening image</h2>
             <p className="panel-status">{imageReady ? "Ready" : "Waiting"}</p>
@@ -664,7 +664,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             onChange={(event) => takeFile(event.target.files?.[0])}
           />
 
-          {previewUrl ? (
+          {previewUrl && !(result && (phase === "result" || phase === "confirmed")) ? (
             <div className="frame">
               <img src={previewUrl} alt="Screening image selected for this visit" />
               <div className="frame-meta">
@@ -682,7 +682,7 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : previewUrl ? null : (
             <div
               className={hot ? "dropzone hot" : "dropzone"}
               onDragEnter={(event) => {
@@ -757,17 +757,27 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
           {error ? <p className="error">{error}</p> : null}
 
           {result && (phase === "result" || phase === "confirmed") ? (
-            <div className={result.links.image_before ? "overlays pair" : "overlays"}>
-              {result.links.image_before ? (
-                <figure className="overlay">
-                  <img src={result.links.image_before} alt="Cervix before acetic acid" />
-                  <figcaption>Before acetic acid (baseline)</figcaption>
+            <div className="sticky-read">
+              <div className={result.links.image_before ? "overlays pair" : "overlays"}>
+                {result.links.image_before ? (
+                  <figure className="overlay">
+                    <img src={result.links.image_before} alt="Cervix before acetic acid" />
+                    <figcaption>Before acetic acid (baseline)</figcaption>
+                  </figure>
+                ) : null}
+                <figure className="overlay" data-coach="overlay">
+                  <img src={result.links.overlay} alt="AI annotated screening image with lesion markers" />
+                  <figcaption>{result.links.image_before ? "After acetic acid · " : ""}AI lesion markers are approximate.</figcaption>
                 </figure>
-              ) : null}
-              <figure className="overlay" data-coach="overlay">
-                <img src={result.links.overlay} alt="AI annotated screening image with lesion markers" />
-                <figcaption>{result.links.image_before ? "After acetic acid · " : ""}AI lesion markers are approximate.</figcaption>
-              </figure>
+              </div>
+              <div className="frame-actions">
+                <button type="button" onClick={() => inputRef.current?.click()} disabled={phase === "reading"}>
+                  Replace
+                </button>
+                <button type="button" onClick={clearImage} disabled={phase === "reading"}>
+                  Remove
+                </button>
+              </div>
             </div>
           ) : null}
         </section>
@@ -856,6 +866,28 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                   </li>
                 </ul>
               </div>
+
+              {result.panel && result.panel.readings.length > 1 ? (
+                <section className="result-block model-panel" aria-label="Model readings">
+                  <h3 className="block-title">
+                    {result.panel.agreement === "agree" ? "Models agree" : "Models disagree"}
+                  </h3>
+                  <ul className="model-readings">
+                    {result.panel.readings.map((reading, index) => (
+                      <li key={`${reading.engine}-${reading.model}-${index}`}>
+                        <strong>{reading.model}</strong>
+                        <span>
+                          {reading.error
+                            ? reading.error
+                            : `${humanize(reading.via_result)} · ${
+                                reading.confidence != null ? `${Math.round(reading.confidence * 100)}%` : "—"
+                              }`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
 
               {!coachOpen ? (
                 <button type="button" className="coach-invite" onClick={() => setCoachOpen(true)}>

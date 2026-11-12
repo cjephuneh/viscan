@@ -71,6 +71,16 @@ export type Interpretation = {
     days_since_last_screen?: number | null;
   };
   review_status: string;
+  panel?: {
+    agreement: "agree" | "split";
+    readings: {
+      engine: string;
+      model: string;
+      via_result: ViaResult | null;
+      confidence: number | null;
+      error: string | null;
+    }[];
+  };
   engine: { name: string; model: string; latency_ms: number };
   /** Pre-acetic-acid frame stored with the visit, if the clinician added one. */
   before_image_id?: number | null;

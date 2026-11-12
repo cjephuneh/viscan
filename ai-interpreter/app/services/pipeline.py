@@ -9,7 +9,8 @@ from PIL import Image, UnidentifiedImageError
 
 from ..models import AIInterpretation, ClinicianAnnotation, Lesion, Patient, ScreeningVisit, ViaImage, db
 from .history import prior_screens
-from .interpreter import ReferenceExample, build_interpreter, with_defaults
+from .interpreter import ReferenceExample, with_defaults
+from .panel import read_together
 from .quality import assess_quality
 from .rules import build_assessment, build_recommendation
 from .storage import get_storage
@@ -175,18 +176,21 @@ def analyze_image(image_bytes: bytes, fields: dict, before_bytes: bytes | None =
             "findings": {},
             "rationale": "Image failed the local quality gate; no AI interpretation attempted.",
         })
+        panel = {"agreement": "agree", "readings": [{
+            "engine": engine, "model": model, "via_result": "INADEQUATE", "confidence": 1.0, "error": None,
+        }]}
     else:
-        interpreter = build_interpreter(current_app.config)
-        engine, model = interpreter.engine, interpreter.model
-        examples = []
-        if getattr(interpreter, "uses_references", False):
-            examples = _reference_examples(current_app.config["FEWSHOT_EXAMPLES"], sha)
-        ai = with_defaults(interpreter.interpret(image_bytes, context, examples, before_bytes=before_bytes))
+        examples = _reference_examples(current_app.config["FEWSHOT_EXAMPLES"], sha)
+        ai, engine, model, examples, panel = read_together(
+            current_app.config, image_bytes, context, examples, before_bytes,
+        )
+        ai = with_defaults(ai)
     latency_ms = int((time.perf_counter() - started) * 1000)
 
     recommendation = build_recommendation(ai, context, current_app.config["REVIEW_CONFIDENCE_THRESHOLD"])
     recommendation["flags"].extend(quality["warnings"])
     assessment = build_assessment(ai, context, recommendation, prior)
+    assessment["panel"] = panel
 
     interpretation = AIInterpretation(
         image=via_image,
@@ -273,6 +277,7 @@ def build_response(interp: AIInterpretation) -> dict:
         "history": assessment["history"],
         "visit": image.visit.to_dict() if image.visit else None,
         "review_status": interp.review_status,
+        "panel": (assessment or {}).get("panel") or {"agreement": "agree", "readings": []},
         "engine": {"name": interp.engine, "model": interp.model, "latency_ms": interp.latency_ms,
                    "reference_examples": interp.fewshot_image_ids or []},
         "links": {
