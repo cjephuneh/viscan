@@ -621,7 +621,7 @@ def test_returning_patient_history_is_passed_to_ai(local_client, monkeypatch):
             return model_result(via_result="VIA_NEGATIVE", area=0, lesions=[],
                                  swede={"acetowhiteness": 0, "margins_surface": 0, "vessels": 0, "lesion_size": 0})
 
-    monkeypatch.setattr("app.services.pipeline.build_interpreter", lambda _cfg: CapturingInterpreter())
+    monkeypatch.setattr("app.services.panel.build_interpreter", lambda _cfg: CapturingInterpreter())
     res = upload(local_client, cervix_image(False, size=640), patient_external_id="PT-CTX", age="40")
     assert res.status_code == 201
     assert captured["context"]["previous_screening_result"] == "VIA_POSITIVE"
