@@ -717,8 +717,8 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
               }}
               onDrop={onDrop}
             >
-              <div className="aperture" aria-hidden="true">
-                <ViscanMark />
+              <div className="aperture logo" aria-hidden="true">
+                <ViscanMark size="md" />
               </div>
               <h3>Place the screening image</h3>
               <p>White-light photo about one minute after acetic acid. Drop it here or choose it.</p>

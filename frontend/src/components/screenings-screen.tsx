@@ -235,14 +235,19 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
               <option value="disputed">Disputed</option>
             </select>
           </label>
-          <label className="field">
-            <span>From</span>
-            <input type="date" value={query.from ?? ""} onChange={(e) => update({ from: e.target.value || undefined })} />
-          </label>
-          <label className="field">
-            <span>To</span>
-            <input type="date" value={query.to ?? ""} onChange={(e) => update({ to: e.target.value || undefined })} />
-          </label>
+          <div className="history-dates" role="group" aria-label="Date range">
+            <label className="field">
+              <span>From</span>
+              <input type="date" value={query.from ?? ""} onChange={(e) => update({ from: e.target.value || undefined })} />
+            </label>
+            <span className="history-dates-sep" aria-hidden="true">
+              to
+            </span>
+            <label className="field">
+              <span>To</span>
+              <input type="date" value={query.to ?? ""} onChange={(e) => update({ to: e.target.value || undefined })} />
+            </label>
+          </div>
           <label className="field">
             <span>Sort</span>
             <select value={query.sort} onChange={(e) => update({ sort: e.target.value as ScreeningQuery["sort"] })}>
@@ -251,26 +256,28 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
               <option value="risk">Highest risk</option>
             </select>
           </label>
-          <label className="toggle">
-            <input type="checkbox" checked={Boolean(query.referred)} onChange={(e) => update({ referred: e.target.checked })} />
-            Referred only
-          </label>
-          <label className="toggle">
-            <input type="checkbox" checked={Boolean(query.overdue)} onChange={(e) => update({ overdue: e.target.checked })} />
-            Overdue follow-up
-          </label>
-          {filtered ? (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => {
-                setSearch("");
-                setQuery({ sort: query.sort, page: 1, per_page: PER_PAGE });
-              }}
-            >
-              Clear filters
-            </button>
-          ) : null}
+          <div className="history-toggles">
+            <label className="toggle">
+              <input type="checkbox" checked={Boolean(query.referred)} onChange={(e) => update({ referred: e.target.checked })} />
+              Referred only
+            </label>
+            <label className="toggle">
+              <input type="checkbox" checked={Boolean(query.overdue)} onChange={(e) => update({ overdue: e.target.checked })} />
+              Overdue follow-up
+            </label>
+            {filtered ? (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setSearch("");
+                  setQuery({ sort: query.sort, page: 1, per_page: PER_PAGE });
+                }}
+              >
+                Clear filters
+              </button>
+            ) : null}
+          </div>
         </div>
       </section>
 
