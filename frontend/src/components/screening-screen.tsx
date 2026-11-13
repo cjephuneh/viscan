@@ -25,14 +25,29 @@ import {
 
 type Phase = "empty" | "ready" | "reading" | "result" | "confirmed";
 
-const READING_STEPS = [
-  "Image uploaded",
-  "Checking image quality",
-  "AI reading the VIA image",
-  "Applying WHO screening rules",
+const READING_JOBS = [
+  "Photo received",
+  "Checking the photo",
+  "Models reading this case",
+  "Decision",
 ];
 
 const FLOW_STEPS = ["Image obtained", "Interpretation", "Clinician confirms"];
+
+function jobName(engine: string, index: number) {
+  if (index === 0) return "Main reading";
+  if (engine === "heuristic") return "Colour check";
+  if (engine === "remote") return "Extra model";
+  return "Second check";
+}
+
+function decisionText(via: string | null | undefined) {
+  if (via === "VIA_NEGATIVE") return "Not suspicious";
+  if (via === "VIA_POSITIVE") return "Suspicious";
+  if (via === "SUSPICIOUS_FOR_CANCER") return "Suspicious for cancer";
+  if (via === "INADEQUATE") return "Photo not clear enough";
+  return "No decision";
+}
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -428,6 +443,20 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             ? "Image added"
             : "Add the image";
   const shownVerdict = finalVia ? viaToVerdict(finalVia) : result?.verdict.screening_verdict;
+  const readings =
+    result?.panel?.readings?.length
+      ? result.panel.readings
+      : result
+        ? [
+            {
+              engine: result.engine.name,
+              model: result.engine.model,
+              via_result: result.verdict.via_result,
+              confidence: result.verdict.confidence,
+              error: null,
+            },
+          ]
+        : [];
   const tone = verdictTone(shownVerdict);
   const other = result ? otherFinding(result.verdict.via_result) : null;
   const finalSuspicious = finalVia === "VIA_POSITIVE" || finalVia === "SUSPICIOUS_FOR_CANCER";
@@ -816,17 +845,27 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
             <div className="reading">
               <div className="reading-slot active">
                 <p className="slot-label">AI reading</p>
-                <p className="slot-title">Preparing the reading</p>
+                <p className="slot-title">Models are reading this photo</p>
                 <p className="quiet">{elapsed}s</p>
               </div>
-              <ol className="timeline">
-                {READING_STEPS.map((label, index) => (
-                  <li key={label} className={index < step ? "past" : index === step ? "now" : ""}>
-                    <span className="dot" />
-                    <span>{label}</span>
-                  </li>
-                ))}
-              </ol>
+              <div className="table-wrap">
+                <table className="data-table" aria-label="Job status">
+                  <thead>
+                    <tr>
+                      <th scope="col">Job</th>
+                      <th scope="col">State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {READING_JOBS.map((label, index) => (
+                      <tr key={label} className={index < step ? "past" : index === step ? "now" : "waiting"}>
+                        <td data-label="Job">{label}</td>
+                        <td data-label="State">{index < step ? "Done" : index === step ? "Working" : "Waiting"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : null}
 
@@ -845,49 +884,70 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 </p>
                 <p className="classification">{verdictLabel(shownVerdict)}</p>
                 <p className="summary">{result.clinical_summary.rationale || result.diagnosis.summary}</p>
-                <ul className="verdict-meta" aria-label="Reading details">
-                  <li>
-                    <span>VIA result</span>
-                    <strong>{humanize(finalVia ?? result.verdict.via_result)}</strong>
-                  </li>
-                  <li>
-                    <span>AI confidence</span>
-                    <strong>{Math.round(result.verdict.confidence * 100)}%</strong>
-                  </li>
-                  <li>
-                    <span>Risk index</span>
-                    <strong>
-                      {result.verdict.risk_score ?? "—"} · {humanize(result.verdict.suspicion_level)}
-                    </strong>
-                  </li>
-                  <li>
-                    <span>Urgency</span>
-                    <strong>{humanize(result.diagnosis.urgency)}</strong>
-                  </li>
-                </ul>
+                <div className="table-wrap">
+                  <table className="data-table" aria-label="Reading details">
+                    <thead>
+                      <tr>
+                        <th scope="col">Detail</th>
+                        <th scope="col">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row">VIA result</th>
+                        <td>{humanize(finalVia ?? result.verdict.via_result)}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">AI confidence</th>
+                        <td>{Math.round(result.verdict.confidence * 100)}%</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Risk index</th>
+                        <td>
+                          {result.verdict.risk_score ?? "—"} · {humanize(result.verdict.suspicion_level)}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Urgency</th>
+                        <td>{humanize(result.diagnosis.urgency)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              {result.panel && result.panel.readings.length > 1 ? (
-                <section className="result-block model-panel" aria-label="Model readings">
-                  <h3 className="block-title">
-                    {result.panel.agreement === "agree" ? "Models agree" : "Models disagree"}
-                  </h3>
-                  <ul className="model-readings">
-                    {result.panel.readings.map((reading, index) => (
-                      <li key={`${reading.engine}-${reading.model}-${index}`}>
-                        <strong>{reading.model}</strong>
-                        <span>
-                          {reading.error
-                            ? reading.error
-                            : `${humanize(reading.via_result)} · ${
-                                reading.confidence != null ? `${Math.round(reading.confidence * 100)}%` : "—"
-                              }`}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
+              <section className="result-block model-panel" aria-label="Model decisions">
+                <h3 className="block-title">Each model's decision</h3>
+                <p className="summary">
+                  {readings.length < 2
+                    ? "One model read this photo."
+                    : result.panel?.agreement === "split"
+                      ? "The models made different decisions. You confirm the main reading."
+                      : "The models made the same decision."}
+                </p>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Job</th>
+                        <th scope="col">Model</th>
+                        <th scope="col">Decision</th>
+                        <th scope="col">Confidence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {readings.map((reading, index) => (
+                        <tr key={`${reading.engine}-${reading.model}-${index}`}>
+                          <th scope="row">{jobName(reading.engine, index)}</th>
+                          <td data-label="Model">{reading.model}</td>
+                          <td data-label="Decision">{reading.error ?? decisionText(reading.via_result)}</td>
+                          <td data-label="Confidence">{reading.error || reading.confidence == null ? "—" : `${Math.round(reading.confidence * 100)}%`}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
 
               {!coachOpen ? (
                 <button type="button" className="coach-invite" onClick={() => setCoachOpen(true)}>
@@ -910,14 +970,26 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                       : ""}
                   </p>
                   {result.history.previous_screens?.length ? (
-                    <ul className="bullets">
-                      {result.history.previous_screens.slice(0, 5).map((screen) => (
-                        <li key={screen.interpretation_id}>
-                          {screen.date || "Unknown date"}: {humanize(screen.via_result)} (
-                          {screen.source === "clinician" ? "clinician-confirmed" : "AI"})
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="table-wrap">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Date</th>
+                            <th scope="col">Result</th>
+                            <th scope="col">Source</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {result.history.previous_screens.slice(0, 5).map((screen) => (
+                            <tr key={screen.interpretation_id}>
+                              <td data-label="Date">{screen.date || "Unknown date"}</td>
+                              <td data-label="Result">{humanize(screen.via_result)}</td>
+                              <td data-label="Source">{screen.source === "clinician" ? "Clinician" : "AI"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : null}
                 </section>
               ) : null}
@@ -926,59 +998,69 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                 <h3 id="findings-heading" className="block-title">
                   Findings
                 </h3>
-                <dl className="findings">
-                  <div>
-                    <dt>Acetowhite change</dt>
-                    <dd>
-                      {humanize(result.findings?.acetowhite_density)}
-                      {result.findings?.lesion_margins && result.findings?.lesion_margins !== "none"
-                        ? ` · ${humanize(result.findings?.lesion_margins)} margins`
-                        : ""}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Lesion location</dt>
-                    <dd>{clockText(result.findings?.lesion_clock_positions)}</dd>
-                  </div>
-                  <div>
-                    <dt>Cervix involved</dt>
-                    <dd>
-                      {result.findings?.cervix_area_involved_percent ?? 0}%
-                      {result.findings?.extends_into_canal ? " · extends into canal" : ""}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Transformation zone</dt>
-                    <dd>
-                      {humanize(result.image_assessment.transformation_zone_type)} · SCJ{" "}
-                      {humanize(result.image_assessment.scj_visibility).toLowerCase()}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Image type</dt>
-                    <dd>{humanize(result.image_assessment.image_modality)}</dd>
-                  </div>
-                  <div>
-                    <dt>Swede score</dt>
-                    <dd>
-                      {result.swede.total}/{result.swede.max} · {result.swede.interpretation}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Ablation eligible</dt>
-                    <dd>
-                      {result.recommendation.ablation_eligible === null
-                        ? "Not applicable"
-                        : result.recommendation.ablation_eligible
-                          ? "Yes"
-                          : "No"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Follow-up due</dt>
-                    <dd>{result.follow_up_due ?? "—"}</dd>
-                  </div>
-                </dl>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Finding</th>
+                        <th scope="col">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row">Acetowhite change</th>
+                        <td>
+                          {humanize(result.findings?.acetowhite_density)}
+                          {result.findings?.lesion_margins && result.findings?.lesion_margins !== "none"
+                            ? ` · ${humanize(result.findings?.lesion_margins)} margins`
+                            : ""}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Lesion location</th>
+                        <td>{clockText(result.findings?.lesion_clock_positions)}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Cervix involved</th>
+                        <td>
+                          {result.findings?.cervix_area_involved_percent ?? 0}%
+                          {result.findings?.extends_into_canal ? " · extends into canal" : ""}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Transformation zone</th>
+                        <td>
+                          {humanize(result.image_assessment.transformation_zone_type)} · SCJ{" "}
+                          {humanize(result.image_assessment.scj_visibility).toLowerCase()}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Image type</th>
+                        <td>{humanize(result.image_assessment.image_modality)}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Swede score</th>
+                        <td>
+                          {result.swede.total}/{result.swede.max} · {result.swede.interpretation}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Ablation eligible</th>
+                        <td>
+                          {result.recommendation.ablation_eligible === null
+                            ? "Not applicable"
+                            : result.recommendation.ablation_eligible
+                              ? "Yes"
+                              : "No"}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Follow-up due</th>
+                        <td>{result.follow_up_due ?? "—"}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </section>
 
               {result.lesions.length ? (
@@ -986,20 +1068,32 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                   <h3 id="lesions-heading" className="block-title">
                     Lesions ({result.lesions.length})
                   </h3>
-                  <ol className="lesion-list">
-                    {result.lesions.map((lesion) => (
-                      <li key={lesion.id}>
-                        <strong>
-                          {lesion.clock_start}–{lesion.clock_end} o&apos;clock · {lesion.area_percent}%
-                        </strong>
-                        <span>
-                          {humanize(lesion.density)}, {humanize(lesion.margins).toLowerCase()} margins,{" "}
-                          {humanize(lesion.vessel_pattern).toLowerCase()}
-                          {lesion.touches_scj ? ", touches SCJ" : ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Location</th>
+                          <th scope="col">Area</th>
+                          <th scope="col">Appearance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.lesions.map((lesion) => (
+                          <tr key={lesion.id}>
+                            <td data-label="Location">
+                              {lesion.clock_start}–{lesion.clock_end} o&apos;clock
+                            </td>
+                            <td data-label="Area">{lesion.area_percent}%</td>
+                            <td data-label="Appearance">
+                              {humanize(lesion.density)}, {humanize(lesion.margins).toLowerCase()} margins,{" "}
+                              {humanize(lesion.vessel_pattern).toLowerCase()}
+                              {lesion.touches_scj ? ", touches SCJ" : ""}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </section>
               ) : null}
 
@@ -1008,11 +1102,22 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                   <h3 id="obs-heading" className="block-title">
                     Key observations
                   </h3>
-                  <ul className="bullets">
-                    {result.clinical_summary.key_observations.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Observation</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.clinical_summary.key_observations.map((item) => (
+                          <tr key={item}>
+                            <td>{item}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </section>
               ) : null}
 
@@ -1021,17 +1126,24 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                   <h3 id="histo-heading" className="block-title">
                     AI-estimated histology likelihood
                   </h3>
-                  <ul className="bars">
-                    {Object.entries(result.histology_likelihood).map(([key, value]) => (
-                      <li key={key}>
-                        <span>{humanize(key)}</span>
-                        <span className="bar" aria-hidden="true">
-                          <span style={{ width: `${Math.round(value * 100)}%` }} />
-                        </span>
-                        <strong>{Math.round(value * 100)}%</strong>
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Estimate</th>
+                          <th scope="col">Likelihood</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(result.histology_likelihood).map(([key, value]) => (
+                          <tr key={key}>
+                            <th scope="row">{humanize(key)}</th>
+                            <td>{Math.round(value * 100)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </section>
               ) : null}
 
@@ -1040,14 +1152,24 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                   <h3 id="elig-heading" className="block-title">
                     WHO ablation checklist
                   </h3>
-                  <ul className="checklist">
-                    {result.treatment_eligibility.checklist.map((item) => (
-                      <li key={item.criterion} className={item.met ? "met" : item.met === null ? "unknown" : "unmet"}>
-                        <span aria-hidden="true">{item.met ? "✓" : item.met === null ? "?" : "✕"}</span>
-                        {item.criterion}
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Check</th>
+                          <th scope="col">Met</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.treatment_eligibility.checklist.map((item) => (
+                          <tr key={item.criterion}>
+                            <td>{item.criterion}</td>
+                            <td>{item.met ? "Yes" : item.met === null ? "Unknown" : "No"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </section>
               ) : null}
 
@@ -1056,11 +1178,22 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                   <h3 id="flags-heading" className="block-title">
                     Flags
                   </h3>
-                  <ul className="bullets flags">
-                    {[...new Set([...result.image_assessment.adequacy.issues, ...result.recommendation.flags])].map((flag) => (
-                      <li key={flag}>{flag}</li>
-                    ))}
-                  </ul>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Flag</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...new Set([...result.image_assessment.adequacy.issues, ...result.recommendation.flags])].map((flag) => (
+                          <tr key={flag}>
+                            <td>{flag}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </section>
               ) : null}
 
@@ -1131,45 +1264,55 @@ export function ScreeningScreen({ intakeId }: { intakeId?: string } = {}) {
                       <h3>Digital record</h3>
                       <p className="record-note">Saved for this visit after clinician confirmation</p>
                     </div>
-                    <dl>
-                      <div>
-                        <dt>Patient ID</dt>
-                        <dd>{visit.patientId.trim()}</dd>
-                      </div>
-                      <div>
-                        <dt>Result</dt>
-                        <dd className={`record-result ${tone}`}>{verdictLabel(shownVerdict)}</dd>
-                      </div>
-                      <div>
-                        <dt>Confirmed by</dt>
-                        <dd>{visit.clinicianId.trim()}</dd>
-                      </div>
-                      <div className="record-image-row">
-                        <dt>Image</dt>
-                        <dd>
-                          <div className="record-image">
-                            {beforePreviewUrl ? <img src={beforePreviewUrl} alt="" /> : null}
-                            {previewUrl ? <img src={previewUrl} alt="" /> : null}
-                            <span>
-                              {beforeFile ? `${beforeFile.name} (before) · ` : ""}
-                              {file?.name}
-                            </span>
-                          </div>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Clinical notes</dt>
-                        <dd>{notes.trim() || "None added"}</dd>
-                      </div>
-                      <div>
-                        <dt>Follow-up</dt>
-                        <dd>
-                          {finalSuspicious
-                            ? result.recommendation.action
-                            : `Routine follow-up${result.follow_up_due ? ` by ${result.follow_up_due}` : ""}.`}
-                        </dd>
-                      </div>
-                    </dl>
+                    <div className="table-wrap">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Field</th>
+                            <th scope="col">Record</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <th scope="row">Patient ID</th>
+                            <td>{visit.patientId.trim()}</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Result</th>
+                            <td className={`record-result ${tone}`}>{verdictLabel(shownVerdict)}</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Confirmed by</th>
+                            <td>{visit.clinicianId.trim()}</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Image</th>
+                            <td>
+                              <div className="record-image">
+                                {beforePreviewUrl ? <img src={beforePreviewUrl} alt="" /> : null}
+                                {previewUrl ? <img src={previewUrl} alt="" /> : null}
+                                <span>
+                                  {beforeFile ? `${beforeFile.name} (before) · ` : ""}
+                                  {file?.name}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Clinical notes</th>
+                            <td>{notes.trim() || "None added"}</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Follow-up</th>
+                            <td>
+                              {finalSuspicious
+                                ? result.recommendation.action
+                                : `Routine follow-up${result.follow_up_due ? ` by ${result.follow_up_due}` : ""}.`}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                     <div className="actions">
                       {finalSuspicious ? (
                         <Link className="primary link-button" href={`/care/${result.interpretation_id}`}>

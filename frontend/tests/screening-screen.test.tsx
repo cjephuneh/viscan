@@ -106,13 +106,36 @@ describe("ScreeningScreen", () => {
     uploadImage(container);
     fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
 
-    const models = await screen.findByRole("region", { name: "Model readings" });
-    expect(models).toHaveTextContent("Models disagree");
+    const models = await screen.findByRole("region", { name: "Model decisions" });
+    expect(models).toHaveTextContent("The models made different decisions. You confirm the main reading.");
+    expect(models).toHaveTextContent("Main reading");
     expect(models).toHaveTextContent("acetowhite-hsv-baseline-v1");
-    expect(models).toHaveTextContent("VIA NEGATIVE");
+    expect(models).toHaveTextContent("Not suspicious");
+    expect(models).toHaveTextContent("55%");
+    expect(models).toHaveTextContent("Extra model");
     expect(models).toHaveTextContent("other-host");
-    expect(models).toHaveTextContent("VIA POSITIVE");
+    expect(models).toHaveTextContent("Suspicious");
+    expect(models).toHaveTextContent("80%");
     expect(container.querySelector(".sticky-read")).not.toBeNull();
+  });
+
+  it("shows each job as waiting, working, or done while the models read", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      if (String(input) === "/api/v1/interpret") return new Promise(() => undefined);
+      return Promise.resolve(new Response(JSON.stringify({ found: false, prefill: null }), { status: 200 }));
+    });
+    const { container } = render(<ScreeningScreen />);
+    typeInto(screen.getByLabelText("Patient ID"), "PT-1");
+    uploadImage(container);
+    fireEvent.click(screen.getByRole("button", { name: "Read this image" }));
+
+    const jobs = await screen.findByRole("table", { name: "Job status" });
+    expect(jobs).toHaveTextContent("Photo received");
+    expect(jobs).toHaveTextContent("Checking the photo");
+    expect(jobs).toHaveTextContent("Models reading this case");
+    expect(jobs).toHaveTextContent("Decision");
+    expect(jobs).toHaveTextContent("Working");
+    expect(jobs).toHaveTextContent("Waiting");
   });
 
   it("shows the API error and lets the clinician retry", async () => {

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Source_Sans_3, Source_Serif_4 } from "next/font/google";
 import { ScrollPolish } from "@/components/scroll-polish";
 import "./globals.css";
@@ -14,6 +14,12 @@ const sourceSerif = Source_Serif_4({
   variable: "--font-source-serif",
   display: "swap",
 });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   title: "VISCAN",
