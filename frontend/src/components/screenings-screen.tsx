@@ -88,28 +88,28 @@ function ScreeningItem({ row }: { row: ScreeningRow }) {
   return (
     <>
       <tr className={`history-item ${tone}`}>
-        <td>
+        <td data-label="Patient">
           <strong>{who}</strong>
           <small className="table-sub">
             {row.patient_name && row.patient_external_id ? row.patient_external_id : `Reading #${row.interpretation_id}`}
           </small>
         </td>
-        <td>{formatDate(row.created_at)}</td>
-        <td>
+        <td data-label="Date">{formatDate(row.created_at)}</td>
+        <td data-label="AI reading">
           <span className={`verdict-pill ${tone}`}>AI: {verdictLabel(row.screening_verdict)}</span>
         </td>
-        <td>
+        <td data-label="Review">
           <span className={`status-pill ${row.review_status}`}>{STATUS_LABELS[row.review_status]}</span>
           {row.referral ? <span className="badge">Referred</span> : null}
           {row.follow_up_overdue ? <span className="badge overdue">Follow-up overdue</span> : null}
         </td>
-        <td className={finalTone}>
+        <td data-label="Final result" className={finalTone}>
           {humanize(row.final_via_result)}
           <small>{row.result_source === "clinician" ? `by ${row.confirmed_by ?? "clinician"}` : "AI, unconfirmed"}</small>
         </td>
-        <td>{row.risk_score ?? "—"}</td>
-        <td className={row.follow_up_overdue ? "alert" : undefined}>{formatDate(row.follow_up_due, false)}</td>
-        <td className="table-actions">
+        <td data-label="Risk">{row.risk_score ?? "—"}</td>
+        <td data-label="Follow-up" className={row.follow_up_overdue ? "alert" : undefined}>{formatDate(row.follow_up_due, false)}</td>
+        <td data-label="Report" className="table-actions">
           <a className="text-button" href={row.links.report} target="_blank" rel="noreferrer">
             Report
           </a>
