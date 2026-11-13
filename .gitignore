@@ -33,7 +33,6 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 
 # Environment variables and secrets
-.env
 !.env.example
 *.pem
 

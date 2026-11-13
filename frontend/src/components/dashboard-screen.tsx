@@ -46,17 +46,17 @@ function MiniRow({ row, panel }: { row: ScreeningRow; panel: string }) {
   const who = row.patient_name || row.patient_external_id || `Reading #${row.interpretation_id}`;
   return (
     <tr>
-      <td>
+      <td data-label="Patient">
         <Link href={`/screenings?q=%23${row.interpretation_id}`} className="table-person">
           <span className={`case-dot ${tone}`} aria-hidden="true" />
           <strong>{who}</strong>
         </Link>
       </td>
-      <td>
+      <td data-label="Reading">
         {verdictLabel(row.screening_verdict)} · {humanize(row.final_via_result)}
         {row.risk_score != null ? ` · risk ${row.risk_score}` : ""}
       </td>
-      <td>{panel === "overdue" && row.follow_up_due ? `Due ${row.follow_up_due}` : when(row.created_at)}</td>
+      <td data-label={panel === "overdue" ? "Due" : "When"}>{panel === "overdue" && row.follow_up_due ? `Due ${row.follow_up_due}` : when(row.created_at)}</td>
     </tr>
   );
 }
