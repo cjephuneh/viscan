@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { PerformanceMetrics } from "@/components/performance-metrics";
 import { type ScreeningPage, type ScreeningQuery, type ScreeningRow, listScreenings } from "@/lib/history";
 import { type Verdict, humanize, verdictLabel, verdictTone } from "@/lib/viscan";
 
@@ -249,6 +250,8 @@ export function ScreeningsScreen({ initial = {} }: { initial?: ScreeningQuery })
           />
         </ul>
       ) : null}
+
+      <PerformanceMetrics summary={summary ?? null} />
 
       <section className="history-filters" aria-label="Filter screenings">
         <label className="field history-search">

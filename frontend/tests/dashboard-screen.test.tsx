@@ -40,6 +40,36 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (url: string) => {
       if (url.startsWith("/api/v1/intake")) return new Response(JSON.stringify([]));
+      if (url.startsWith("/api/v1/metrics")) {
+        return new Response(
+          JSON.stringify({
+            total_interpretations: 12,
+            by_engine: { heuristic: 12 },
+            by_verdict: { SUSPICIOUS: 4, NOT_SUSPICIOUS: 7, INDETERMINATE: 1 },
+            by_via_result: {},
+            by_review_status: { pending: 3, reviewed: 8, disputed: 1 },
+            average_risk_score: 42.5,
+            average_latency_ms: 1850,
+            clinician_agreement: {
+              reviewed: 8,
+              agreement_rate: 0.75,
+              cohens_kappa: 0.61,
+              confusion_matrix_ai_vs_clinician: {},
+            },
+            vs_histology_cin2_plus: {
+              cases_with_reference: 0,
+              true_positive: 0,
+              false_positive: 0,
+              true_negative: 0,
+              false_negative: 0,
+              sensitivity: null,
+              specificity: null,
+              ppv: null,
+              npv: null,
+            },
+          }),
+        );
+      }
       const overdue = url.includes("overdue=1");
       return new Response(
         JSON.stringify({ items: overdue ? [] : [row], total: overdue ? 0 : 1, page: 1, per_page: 5, pages: 1, summary }),
@@ -69,7 +99,16 @@ describe("DashboardScreen", () => {
     render(<DashboardScreen />);
     expect(screen.getByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Start a screening/ })).toHaveAttribute("href", "/screening");
-    expect(await screen.findByText("75%")).toBeInTheDocument();
+    expect((await screen.findAllByText("75%")).length).toBeGreaterThan(0);
+
+    const performance = await screen.findByRole("region", { name: "System performance" });
+    expect(within(performance).getByText("System performance")).toBeInTheDocument();
+    expect(within(performance).getByText("Review status")).toBeInTheDocument();
+    expect(within(performance).getByText("AI verdict mix")).toBeInTheDocument();
+    expect(within(performance).getByText("Throughput")).toBeInTheDocument();
+    expect(within(performance).getByText("1.9 s")).toBeInTheDocument();
+    expect(within(performance).getByText("0.61")).toBeInTheDocument();
+    expect(within(performance).getByText("75%")).toBeInTheDocument();
 
     const review = screen.getByRole("region", { name: /Needs your review/ });
     expect(await within(review).findByText("PT-0009")).toBeInTheDocument();

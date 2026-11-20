@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { PerformanceMetrics } from "@/components/performance-metrics";
 import { type ScreeningPage, type ScreeningQuery, type ScreeningRow, listScreenings } from "@/lib/history";
 import { humanize, verdictLabel, verdictTone } from "@/lib/viscan";
 
@@ -174,6 +175,10 @@ export function DashboardScreen() {
           </ul>
         </section>
       ) : null}
+
+      <section className="dash-section" aria-label="Performance">
+        <PerformanceMetrics summary={summary} />
+      </section>
 
       <section className="dash-section dash-work" aria-label="Clinic work">
         <div className="dash-work-stack">

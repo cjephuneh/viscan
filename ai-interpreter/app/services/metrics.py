@@ -64,6 +64,7 @@ def compute_metrics() -> dict:
 
     all_interps = AIInterpretation.query.all()
     agreement = sum(a == b for a, b in pairs)
+    latencies = [i.latency_ms for i in all_interps if i.latency_ms is not None]
     return {
         "total_interpretations": len(interpretations),
         "by_engine": dict(by_engine),
@@ -74,6 +75,7 @@ def compute_metrics() -> dict:
             round(sum(scores) / len(scores), 1)
             if (scores := [i.risk_score for i in all_interps if i.risk_score is not None]) else None
         ),
+        "average_latency_ms": round(sum(latencies) / len(latencies)) if latencies else None,
         "clinician_agreement": {
             "reviewed": len(pairs),
             "agreement_rate": _ratio(agreement, len(pairs)),
