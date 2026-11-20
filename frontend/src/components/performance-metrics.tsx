@@ -240,14 +240,14 @@ export function PerformanceMetrics({ summary = null }: { summary?: ScreeningSumm
   }, []);
 
   const total = summary?.total ?? metrics?.total_interpretations ?? 0;
-  const reviewed = summary?.reviewed ?? metrics?.by_review_status.reviewed ?? 0;
-  const pending = summary?.pending_review ?? metrics?.by_review_status.pending ?? 0;
-  const disputed = summary?.disputed ?? metrics?.by_review_status.disputed ?? 0;
-  const suspicious = summary?.suspicious ?? metrics?.by_verdict.SUSPICIOUS ?? 0;
-  const clear = summary?.not_suspicious ?? metrics?.by_verdict.NOT_SUSPICIOUS ?? 0;
-  const indeterminate = summary?.indeterminate ?? metrics?.by_verdict.INDETERMINATE ?? 0;
-  const agreement = metrics?.clinician_agreement.agreement_rate ?? summary?.agreement_rate ?? null;
-  const kappa = metrics?.clinician_agreement.cohens_kappa ?? null;
+  const reviewed = summary?.reviewed ?? metrics?.by_review_status?.reviewed ?? 0;
+  const pending = summary?.pending_review ?? metrics?.by_review_status?.pending ?? 0;
+  const disputed = summary?.disputed ?? metrics?.by_review_status?.disputed ?? 0;
+  const suspicious = summary?.suspicious ?? metrics?.by_verdict?.SUSPICIOUS ?? 0;
+  const clear = summary?.not_suspicious ?? metrics?.by_verdict?.NOT_SUSPICIOUS ?? 0;
+  const indeterminate = summary?.indeterminate ?? metrics?.by_verdict?.INDETERMINATE ?? 0;
+  const agreement = metrics?.clinician_agreement?.agreement_rate ?? summary?.agreement_rate ?? null;
+  const kappa = metrics?.clinician_agreement?.cohens_kappa ?? null;
   const histology = metrics?.vs_histology_cin2_plus;
   const hasHistology = Boolean(histology && histology.cases_with_reference > 0);
   const reviewDone = ratio(reviewed, total);
@@ -357,7 +357,7 @@ export function PerformanceMetrics({ summary = null }: { summary?: ScreeningSumm
               label="Clinician agreement"
               value={formatPercent(agreement)}
               hint={
-                metrics?.clinician_agreement.reviewed
+                metrics?.clinician_agreement?.reviewed
                   ? `${metrics.clinician_agreement.reviewed} confirmed reading${metrics.clinician_agreement.reviewed === 1 ? "" : "s"}`
                   : "Share of confirmed readings matching AI"
               }

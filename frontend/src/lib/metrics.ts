@@ -25,6 +25,12 @@ export type ClinicMetrics = {
   };
 };
 
+function isClinicMetrics(data: unknown): data is ClinicMetrics {
+  if (!data || typeof data !== "object") return false;
+  const row = data as Record<string, unknown>;
+  return "clinician_agreement" in row && "by_review_status" in row && "total_interpretations" in row;
+}
+
 export async function fetchClinicMetrics(): Promise<ClinicMetrics> {
   let res: Response;
   try {
@@ -33,8 +39,9 @@ export async function fetchClinicMetrics(): Promise<ClinicMetrics> {
     throw new Error("Could not reach VIScan. Check the connection and try again.");
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-  return data as ClinicMetrics;
+  if (!res.ok) throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
+  if (!isClinicMetrics(data)) throw new Error("Performance metrics response was incomplete.");
+  return data;
 }
 
 export function isoDaysAgo(days: number): string {
